@@ -219,6 +219,23 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'reverse_clip',
+      {
+        description: 'Reverse a clip\'s audio. Returns the new clip.',
+        inputSchema: z.object({
+          clip_id: z.string(),
+          title: z.string().optional()
+        })
+      },
+      async ({ clip_id, title }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.reverseClip(clip_id, title));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

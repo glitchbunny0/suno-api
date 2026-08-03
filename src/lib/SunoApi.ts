@@ -1652,6 +1652,32 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Reverse a clip. Synchronous — returns the new clip object directly.
+   * Title defaults to "Name (Reversed)".
+   */
+  public async reverseClip(clipId: string, title?: string): Promise<any> {
+    validateRequiredString(clipId, 'clipId');
+    validateOptionalString(title, 'title');
+    await this.keepAlive(false);
+    if (!title) {
+      const clip: any = await this.getClip(clipId);
+      title = `${clip?.title || 'Clip'} (Reversed)`;
+    }
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/clips/reverse-clip/`, {
+        clip_id: clipId,
+        title
+      });
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Reverse failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
