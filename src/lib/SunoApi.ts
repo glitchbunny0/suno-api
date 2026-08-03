@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import UserAgent from 'user-agents';
 import pino from 'pino';
 import yn from 'yn';
-import { isPage, sleep, waitForRequests } from '@/lib/utils';
+import { isPage, sleep, waitForRequests, AsyncMutex } from '@/lib/utils';
 import * as cookie from 'cookie';
 import { randomUUID } from 'node:crypto';
 import { Solver } from '@2captcha/captcha-solver';
@@ -162,6 +162,7 @@ class SunoApi {
   private solver = new Solver(`${process.env.TWOCAPTCHA_KEY}`);
   private ghostCursorEnabled = yn(process.env.BROWSER_GHOST_CURSOR, { default: false });
   private cursor?: Cursor;
+  private captchaMutex = new AsyncMutex();
 
   constructor(cookies: string) {
     this.userAgent = new UserAgent(/Macintosh/).random().toString();
@@ -377,27 +378,117 @@ class SunoApi {
     throw new Error('Failed to solve CAPTCHA after 3 attempts');
   }
 
+  // ── v2 CAPTCHA helpers (from PR #271) ─────────────────────────────
+
   /**
-   * Check and solve CAPTCHA if required. Returns the hCaptcha token or null.
-   * Uses two-step navigation (homepage → /create) so Clerk JS can establish
-   * a proper browser session from the __client cookie.
+   * Poll multiple selectors until one becomes visible.
+   * Resistant to Suno UI changes — tries 10+ selectors in rotation.
+   */
+  private async waitForAnyVisibleLocator(page: Page, selectors: string[], timeout = 15000): Promise<Locator | null> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      for (const selector of selectors) {
+        const locator = page.locator(selector).first();
+        if (await locator.isVisible().catch(() => false))
+          return locator;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return null;
+  }
+
+  /**
+   * Save HTML, screenshot, and frame list to debug/ for troubleshooting.
+   */
+  private async saveDebugSnapshot(page: Page, label: string, requestLog?: string[]): Promise<void> {
+    const debugDir = path.join(process.cwd(), 'debug');
+    try {
+      await fs.mkdir(debugDir, { recursive: true });
+      await fs.writeFile(path.join(debugDir, `${label}.html`), await page.content());
+      await page.screenshot({ path: path.join(debugDir, `${label}.png`), fullPage: true });
+      if (requestLog)
+        await fs.writeFile(path.join(debugDir, `${label}-requests.log`), requestLog.join('\n'));
+      const frameUrls = page.frames().map(f => f.url());
+      await fs.writeFile(path.join(debugDir, `${label}-frames.log`), frameUrls.join('\n'));
+      logger.info(`Debug snapshot saved: debug/${label}.*`);
+    } catch (e: any) {
+      logger.warn(`Failed to save debug snapshot "${label}": ${e.message}`);
+    }
+  }
+
+  /**
+   * Wait for any CAPTCHA iframe to appear. Detects hCaptcha, reCAPTCHA, Turnstile, Arkose.
+   */
+  private async waitForCaptchaFrame(page: Page, timeout = 15000): Promise<string | null> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const frames = page.frames();
+      for (const frame of frames) {
+        const url = frame.url().toLowerCase();
+        if (url.includes('hcaptcha.com')) return 'hcaptcha';
+        if (url.includes('recaptcha')) return 'recaptcha';
+        if (url.includes('challenges.cloudflare.com') || url.includes('turnstile')) return 'turnstile';
+        if (url.includes('arkoselabs.com') || url.includes('funcaptcha')) return 'arkose';
+      }
+      for (const selector of [
+        'iframe[title*="hCaptcha" i]', 'iframe[title*="recaptcha" i]',
+        'iframe[title*="Cloudflare" i]', 'iframe[src*="hcaptcha" i]',
+      ]) {
+        if (await page.locator(selector).first().isVisible().catch(() => false)) {
+          if (selector.includes('hcaptcha') || selector.includes('hCaptcha')) return 'hcaptcha';
+          if (selector.includes('recaptcha')) return 'recaptcha';
+          return 'unknown';
+        }
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return null;
+  }
+
+  /**
+   * Check and solve CAPTCHA if required (v2 rewrite).
+   * Uses multi-selector polling, popup dismissal, route interception before click,
+   * multi-provider CAPTCHA detection, and debug snapshots.
+   * Serialized via captchaMutex — only one browser session at a time.
    */
   public async getCaptcha(): Promise<string | null> {
     if (!await this.captchaRequired())
       return null;
 
-    logger.info('CAPTCHA required. Launching browser...');
+    const releaseCaptcha = await this.captchaMutex.acquire();
+    if (this.captchaMutex.queueLength > 0)
+      logger.info(`CAPTCHA mutex: ${this.captchaMutex.queueLength} request(s) waiting`);
+
+    try {
+      // Re-check after lock — previous caller may have already solved it
+      if (!await this.captchaRequired())
+        return null;
+
+      return await this._solveCaptchaV2();
+    } finally {
+      releaseCaptcha();
+    }
+  }
+
+  private async _solveCaptchaV2(): Promise<string | null> {
+    logger.info('CAPTCHA required. Launching browser (v2)...');
     const browser = await this.launchBrowser();
     const page = await browser.newPage();
 
-    // STEP 1: Navigate to homepage to let Clerk JS establish the session
-    logger.info('Step 1: Navigating to suno.com homepage to establish Clerk session...');
+    const requestLog: string[] = [];
+    page.on('request', (req: any) => {
+      const url: string = req.url();
+      if (!url.startsWith('data:') && !url.endsWith('.woff2') && !url.endsWith('.woff'))
+        requestLog.push(`[${new Date().toISOString()}] ${req.method()} ${url}`);
+    });
+
+    // STEP 1: Navigate to homepage first to let Clerk JS establish the session
+    logger.info('Step 1: Navigating to suno.com homepage...');
     await page.goto('https://suno.com', {
       referer: 'https://www.google.com/',
       waitUntil: 'domcontentloaded',
-      timeout: SunoApi.TIMEOUTS.PAGE_NAVIGATION
+      timeout: SunoApi.TIMEOUTS.PAGE_NAVIGATION || 60000
     });
-
     try {
       await page.waitForResponse(
         response => response.url().includes('auth.suno.com/v1/client') && response.status() === 200,
@@ -409,208 +500,223 @@ class SunoApi {
       logger.warn('Clerk auth response timeout — continuing anyway');
     }
 
-    // STEP 2: Navigate to the protected page
+    // STEP 2: Navigate to create page
     logger.info('Step 2: Navigating to suno.com/create...');
     await page.goto('https://suno.com/create', {
       referer: 'https://suno.com/',
       waitUntil: 'domcontentloaded',
-      timeout: SunoApi.TIMEOUTS.PAGE_NAVIGATION
+      timeout: SunoApi.TIMEOUTS.PAGE_NAVIGATION || 60000
     });
 
-    // Wait for the React app to load
     try {
-      await page.waitForResponse(
-        response => response.url().includes('/api/project/') && response.status() === 200,
-        { timeout: SunoApi.TIMEOUTS.PAGE_API_RESPONSE }
-      );
-      logger.info('Page fully loaded');
+      await page.waitForLoadState('networkidle', { timeout: 30000 });
     } catch {
-      logger.info('API response timeout — page might not be fully loaded, continuing anyway');
+      logger.warn('Network did not reach idle state within 30s; continuing');
     }
+
+    await this.saveDebugSnapshot(page, '01-page-loaded', requestLog);
 
     if (this.ghostCursorEnabled)
       this.cursor = await createCursor(page);
 
-    logger.info('Triggering the CAPTCHA');
-
-    // Close popups
-    try {
-      await page.getByLabel('Close').click({ timeout: SunoApi.TIMEOUTS.POPUP_CLOSE });
-    } catch {
+    // Close popups / modals / banners
+    for (const closeSelector of [
+      'button[aria-label="Close"]', '[aria-label="close"]', '[aria-label="Dismiss"]',
+      'button:has-text("Got it")', 'button:has-text("Accept")', 'button:has-text("OK")',
+    ]) {
       try {
-        await page.locator('button[aria-label="Close"]').click({ timeout: SunoApi.TIMEOUTS.POPUP_CLOSE });
-      } catch {
-        logger.info('No popup found — continuing');
-      }
+        const closeBtn = page.locator(closeSelector).first();
+        if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+          await closeBtn.click({ timeout: 1000 });
+          logger.info(`Closed popup via ${closeSelector}`);
+        }
+      } catch {}
     }
 
-    const controller = new AbortController();
+    // STEP 3: Find and fill the prompt input (10 fallback selectors)
+    logger.info('Looking for prompt input');
+    const promptSelectors = [
+      '.custom-textarea',
+      'textarea[placeholder*="lyrics" i]',
+      'textarea[placeholder*="describe" i]',
+      'textarea[placeholder*="song" i]',
+      'textarea[placeholder*="prompt" i]',
+      'textarea:visible',
+      '[contenteditable="true"][role="textbox"]',
+      '[contenteditable="true"]',
+      'div[role="textbox"]',
+      'input[type="text"]',
+    ];
+    const promptInput = await this.waitForAnyVisibleLocator(page, promptSelectors, 15000);
+    if (promptInput) {
+      const desc = await promptInput.evaluate((el: Element) =>
+        `${el.tagName}.${el.className} placeholder="${el.getAttribute('placeholder') || ''}"`
+      ).catch(() => 'unknown');
+      logger.info(`Found prompt input: ${desc}`);
+      await this.click(promptInput);
+      await new Promise(r => setTimeout(r, 300));
+      await promptInput.pressSequentially('Lorem ipsum dolor sit amet', { delay: 60 });
+    } else {
+      logger.warn('No prompt input found anywhere on page');
+      await this.saveDebugSnapshot(page, '03-no-prompt-input', requestLog);
+    }
 
-    // Set up route interception to capture the hCaptcha token
+    // STEP 4: Find the Create / Generate button (8 fallback selectors)
+    logger.info('Looking for Create/Generate button');
+    const buttonSelectors = [
+      'button[aria-label="Create"]',
+      'button:has-text("Create")',
+      '[role="button"]:has-text("Create")',
+      'button[type="submit"]',
+      'button:has-text("Generate")',
+      '[role="button"]:has-text("Generate")',
+      'button:has-text("Make a song")',
+      'button:has-text("Submit")',
+    ];
+    const button = await this.waitForAnyVisibleLocator(page, buttonSelectors, 15000);
+    if (!button) {
+      logger.error('Could not find any Create/Generate button');
+      await this.saveDebugSnapshot(page, '04-no-create-button', requestLog);
+      await browser.browser()?.close();
+      throw new Error('Could not find a Create/Generate button. Check debug/ folder for HTML snapshots.');
+    }
+
+    const buttonInfo = await button.evaluate((el: Element) =>
+      `<${el.tagName} class="${el.className}" aria-label="${el.getAttribute('aria-label') || ''}">${(el as HTMLElement).innerText?.slice(0, 40)}`
+    ).catch(() => 'unknown');
+    logger.info(`Found button: ${buttonInfo}`);
+
+    // STEP 5: Set up route interception BEFORE clicking (so we never miss the token)
+    const controller = new AbortController();
     const tokenPromise = new Promise<string | null>((resolve, reject) => {
-      page.route('**/api/generate/v2/**', async (route) => {
+      page.route('**/api/generate/v2/**', async (route: any) => {
         try {
-          logger.info('hCaptcha token received. Closing browser');
-          route.abort();
+          logger.info('Generate API call intercepted! Extracting token and closing browser');
           const request = route.request();
-          const headers = request.headers();
-          if (headers.authorization)
-            this.currentToken = headers.authorization.split('Bearer ').pop();
-          browser.browser()?.close().catch(e => logger.error('Browser close error', { error: toError(e) }));
+          this.currentToken = request.headers().authorization?.split('Bearer ').pop();
+          const postData = request.postDataJSON();
+          route.abort();
           controller.abort();
-          const postData = request.postDataJSON() as { token?: string; hcaptcha_token?: string } | null;
+          browser.browser()?.close().catch(() => {});
           resolve(postData?.token || postData?.hcaptcha_token || null);
         } catch (err) {
           reject(toError(err));
         }
       });
-
-      // Also register fallback patterns — Suno sometimes changes the generate URL
-      for (const pattern of ['**/api/generate/v3/**', '**/api/generate/**']) {
-        page.route(pattern, async (route) => {
-          try {
-            const url = route.request().url();
-            // Skip if already matched by the primary route
-            if (url.includes('/api/generate/v2/')) return;
-            logger.info(`Token captured via fallback route: ${url}`);
-            route.abort();
-            const request = route.request();
-            const headers = request.headers();
-            if (headers.authorization)
-              this.currentToken = headers.authorization.split('Bearer ').pop();
-            browser.browser()?.close().catch(() => {});
-            controller.abort();
-            const postData = request.postDataJSON() as { token?: string; hcaptcha_token?: string } | null;
-            resolve(postData?.token || postData?.hcaptcha_token || null);
-          } catch (err) {
-            reject(toError(err));
-          }
-        });
-      }
     });
 
-    // Fill the textarea and click Create
-    // Suno changes their DOM frequently — try multiple selectors
-    let textarea = page.locator('.custom-textarea');
-    try {
-      await textarea.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.TEXTAREA_WAIT });
-      logger.info('Found .custom-textarea');
-    } catch {
-      // Fallback: find by placeholder pattern or any visible textarea
-      logger.info('.custom-textarea not found — trying fallback selectors');
-      // Dump the page HTML for debugging
-      const textareas = await page.locator('textarea').count();
-      logger.info(`Found ${textareas} textarea(s) on page`);
-      for (let i = 0; i < textareas; i++) {
-        const placeholder = await page.locator('textarea').nth(i).getAttribute('placeholder').catch(() => null);
-        const cls = await page.locator('textarea').nth(i).getAttribute('class').catch(() => null);
-        const visible = await page.locator('textarea').nth(i).isVisible().catch(() => false);
-        logger.info(`  textarea[${i}]: placeholder="${placeholder}" class="${cls}" visible=${visible}`);
-      }
-      textarea = page.locator('textarea:visible').first();
-      await textarea.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.TEXTAREA_WAIT });
-    }
-    await this.click(textarea);
-    await textarea.pressSequentially(process.env.CAPTCHA_TEST_PROMPT || 'Lorem ipsum', { delay: 80 });
-    logger.info('Textarea filled');
-
-    // Create button — try multiple selectors for different Suno UI versions
-    let button = page.locator('button[aria-label="Create"]').locator('div.flex');
-    try {
-      await button.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.CREATE_BUTTON_WAIT });
-      logger.info('Found Create button with div.flex selector');
-    } catch {
-      logger.info('Create button div.flex not found — trying alternatives');
-      // Dump buttons for debugging
-      const buttons = await page.locator('button').count();
-      logger.info(`Found ${buttons} button(s) on page`);
-      for (let i = 0; i < Math.min(buttons, 10); i++) {
-        const ariaLabel = await page.locator('button').nth(i).getAttribute('aria-label').catch(() => null);
-        const text = await page.locator('button').nth(i).innerText().catch(() => '');
-        const visible = await page.locator('button').nth(i).isVisible().catch(() => false);
-        if (visible && (ariaLabel || text.trim()))
-          logger.info(`  button[${i}]: aria="${ariaLabel}" text="${text.trim()}" visible=${visible}`);
-      }
-      button = page.locator('button[aria-label="Create song"]');
-      try {
-        await button.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.CREATE_BUTTON_WAIT });
-      } catch {
-        button = page.locator('button:has-text("Create"):visible');
-      }
-    }
-    logger.info('Clicking Create button...');
+    // STEP 6: Click Create and wait for CAPTCHA
+    logger.info('Clicking Create button');
     await this.click(button);
+    await new Promise(r => setTimeout(r, 3000));
+    await this.saveDebugSnapshot(page, '05-after-create-click', requestLog);
 
-    // CAPTCHA solving loop
-    const captchaSolvingPromise = new Promise<void>(async (resolve, reject) => {
+    // STEP 7: Detect CAPTCHA type
+    logger.info('Waiting for CAPTCHA challenge to appear...');
+    let captchaType = await this.waitForCaptchaFrame(page, 15000);
+
+    if (!captchaType) {
+      // Retry the click — sometimes the first one is swallowed
+      logger.warn('No CAPTCHA detected after first click. Retrying...');
+      await this.click(button);
+      await new Promise(r => setTimeout(r, 5000));
+      await this.saveDebugSnapshot(page, '06-after-second-click', requestLog);
+      captchaType = await this.waitForCaptchaFrame(page, 20000);
+    }
+
+    if (!captchaType) {
+      // Maybe CAPTCHA wasn't needed — check if generation already proceeded
+      logger.warn('No CAPTCHA iframe found. Checking if generation proceeded without CAPTCHA...');
+      const raceResult = await Promise.race([
+        tokenPromise.then(t => ({ type: 'token' as const, value: t })),
+        new Promise<{ type: 'timeout' }>(r => setTimeout(() => r({ type: 'timeout' }), 10000)),
+      ]);
+      if (raceResult.type === 'token') {
+        logger.info('Generation proceeded without visible CAPTCHA');
+        return raceResult.value;
+      }
+      await this.saveDebugSnapshot(page, '07-no-captcha-final', requestLog);
+      await browser.browser()?.close();
+      throw new Error('No CAPTCHA appeared and generation did not proceed. Check debug/ folder.');
+    }
+
+    logger.info(`Detected CAPTCHA type: ${captchaType}`);
+
+    // Cloudflare Turnstile is invisible/managed — no visual puzzle to solve.
+    // It runs in the background and, when it passes, the generate request fires
+    // automatically. We just need to wait for the route interceptor to catch it.
+    // Same for reCAPTCHA v3 (invisible score-based).
+    if (captchaType === 'turnstile' || captchaType === 'recaptcha') {
+      logger.info(`${captchaType} is invisible/managed — waiting for it to pass and generate request to fire...`);
+      const timeoutMs = captchaType === 'turnstile' ? 30000 : 30000;
+      const result = await Promise.race([
+        tokenPromise,
+        new Promise<null>(resolve => setTimeout(() => {
+          logger.warn(`${captchaType} did not resolve within ${timeoutMs / 1000}s`);
+          resolve(null);
+        }, timeoutMs))
+      ]);
+      if (result) {
+        logger.info(`Generate request captured after ${captchaType} pass!`);
+      }
+      await browser.browser()?.close().catch(() => {});
+      return result;
+    }
+
+    if (captchaType !== 'hcaptcha') {
+      await this.saveDebugSnapshot(page, '08-unsupported-captcha', requestLog);
+      await browser.browser()?.close();
+      throw new Error(`Detected "${captchaType}" — only hCaptcha and Turnstile are supported.`);
+    }
+
+    // STEP 8: Solve hCaptcha challenges in a loop
+    logger.info('Starting hCaptcha solving loop');
+    const captchaSolverPromise = new Promise<void>(async (resolve, reject) => {
       const frame = page.frameLocator('iframe[title*="hCaptcha"]');
       const challenge = frame.locator('.challenge-container');
       try {
-        let shouldWaitForImages = true;
+        let wait = false; // first iteration: images already loaded
         while (true) {
-          if (shouldWaitForImages) {
-            // Upstream uses waitForRequests() which listens for hCaptcha image URLs,
-            // but Suno sometimes doesn't fire those requests before the challenge appears.
-            // Use a delay-based approach as fallback — more resilient to UI changes.
-            await sleep(SunoApi.TIMEOUTS.CAPTCHA_IMAGE_LOAD_DELAY);
-          }
+          if (wait)
+            await waitForRequests(page, controller.signal);
 
-          // Check if a visual challenge actually appeared.
-          // hCaptcha may pass invisibly based on browser fingerprint — if no
-          // challenge-container is visible within the timeout, the token was
-          // likely auto-passed and the route interceptor will handle it.
-          const challengeVisible = await challenge.isVisible().catch(() => false);
-          if (!challengeVisible) {
-            logger.info('No visible hCaptcha challenge — may have auto-passed. Waiting for token...');
-            // Wait a bit for the generate request to fire with the auto-passed token
-            await sleep(5);
-            // Check again — challenge might appear after a delay
-            const retryVisible = await challenge.isVisible().catch(() => false);
-            if (!retryVisible) {
-              logger.info('Still no challenge — resolving (token capture handled by route interceptor)');
-              resolve();
-              return;
-            }
-          }
-
-          const promptLocator = challenge.locator('.prompt-text').first();
-          await promptLocator.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-          const promptText = await promptLocator.innerText().catch(() => '');
+          await challenge.waitFor({ state: 'visible', timeout: 60000 });
+          const promptText = await challenge.locator('.prompt-text').first().innerText({ timeout: 15000 }).catch(() => '');
           const isDrag = promptText.toLowerCase().includes('drag');
+
           const solution = await this.solveCaptchaWithRetry(challenge, isDrag);
 
           if (isDrag) {
             const challengeBox = await challenge.boundingBox();
             if (!challengeBox)
               throw new Error('.challenge-container boundingBox is null!');
-
             if (solution.data.length % 2 !== 0) {
-              logger.info('Drag solution has odd number of points — requesting new solution...');
+              logger.info('Drag solution has odd points — requesting new solution...');
               this.solver.badReport(solution.id);
-              shouldWaitForImages = false;
+              wait = false;
               continue;
             }
-
             for (let i = 0; i < solution.data.length; i += 2) {
-              const start = solution.data[i];
-              const end = solution.data[i + 1];
-              await page.mouse.move(challengeBox.x + +start.x, challengeBox.y + +start.y);
+              const startPt = solution.data[i];
+              const endPt = solution.data[i + 1];
+              await page.mouse.move(challengeBox.x + +startPt.x, challengeBox.y + +startPt.y);
               await page.mouse.down();
               await sleep(SunoApi.TIMEOUTS.CAPTCHA_PIECE_UNLOCK_DELAY);
-              await page.mouse.move(challengeBox.x + +end.x, challengeBox.y + +end.y, { steps: 30 });
+              await page.mouse.move(challengeBox.x + +endPt.x, challengeBox.y + +endPt.y, { steps: 30 });
               await page.mouse.up();
             }
-            shouldWaitForImages = true;
+            wait = true;
           } else {
             for (const coord of solution.data) {
               await this.click(challenge, { x: +coord.x, y: +coord.y });
             }
+            wait = true;
           }
 
           this.click(frame.locator('.button-submit')).catch(e => {
             const error = toError(e);
             if (error.message.includes('viewport'))
-              this.click(button); // retrigger CAPTCHA if window closed
+              this.click(button);
             else
               throw error;
           });
@@ -622,34 +728,27 @@ class SunoApi {
         else
           reject(error);
       }
-    }).catch(e => {
-      const error = toError(e);
-      browser.browser()?.close().catch(() => { });
-      throw error;
     });
 
-    // Race the solving loop against the token capture, with an overall timeout.
-    // If the captchaSolvingPromise resolves (e.g. no visual challenge appeared)
-    // but the generate request never fires through the route interceptor,
-    // we need to bail out instead of hanging forever.
+    // Wire solver errors into the token promise
+    captchaSolverPromise.catch(e => {
+      browser.browser()?.close().catch(() => {});
+      // Don't reject — just log. tokenPromise will time out gracefully.
+      logger.error(`CAPTCHA solver error: ${toError(e).message}`);
+    });
+    captchaSolverPromise.catch(() => {});
+
+    // Safety timeout — if token is never captured, bail after 120s
     const timeoutPromise = new Promise<null>((resolve) => {
       setTimeout(() => {
-        logger.warn('getCaptcha overall timeout (30s) — returning null token');
+        logger.warn('getCaptcha overall timeout (120s) — returning null token');
         browser.browser()?.close().catch(() => {});
         controller.abort();
         resolve(null);
-      }, 30000);
+      }, 120000);
     });
 
-    // tokenPromise resolves when the generate request fires (hCaptcha auto-passed or solved).
-    // captchaSolvingPromise resolves when the browser closes (solved) or no challenge.
-    // Whichever fires first wins; the timeout is the safety net.
-    const result = await Promise.race([
-      tokenPromise,
-      captchaSolvingPromise.then(() => tokenPromise),
-      timeoutPromise
-    ]);
-    return result;
+    return Promise.race([tokenPromise, timeoutPromise]);
   }
 
   // ── Generation ───────────────────────────────────────────────────
