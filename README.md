@@ -159,6 +159,12 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/v1/chat/completions`: Generate music — OpenAI-compatible format
 - `/api/custom_generate`: Generate music (Custom Mode: lyrics, style, title, etc.)
 - `/api/generate_lyrics`: Generate lyrics based on prompt
+- `/api/cowrite_lyrics`: Edit lyrics by instruction — `POST { instruction, selected,
+    context_before?, context_after?, lyricist_id?, lyrics_model? }`
+- `/api/lyrics_infill`: Regenerate one lyrics section — `POST { prompt, edit, prefix?,
+    suffix?, title? }`; prefix/suffix preserved, returns stitched full_text
+- `/api/rhymes`: Rhyme suggestions — `POST { word, context_line?, style?, count?,
+    include_slant? }` returns `{ perfect, slant }`
 - `/api/get`: Get music information by id (comma-separated; all music if omitted)
 - `/api/get_limit`: Get quota info
 - `/api/extend_audio`: Extend audio length

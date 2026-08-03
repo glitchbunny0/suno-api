@@ -17,6 +17,9 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | POST /api/generate | WORKING | Fixed Aug 3 — see below |
 | POST /api/custom_generate | WORKING | Same fix |
 | POST /api/generate_lyrics | WORKING | Verified Aug 3 (no token needed) |
+| POST /api/cowrite_lyrics | WORKING | Both modes verified (simple + context) |
+| POST /api/lyrics_infill | WORKING | Section regeneration, full_text stitching verified |
+| POST /api/rhymes | WORKING | Perfect/slant, context-aware ranking verified |
 | GET /api/get_wav | WORKING | WAV download URL, converts on first request |
 | POST /api/upsample_prompt | WORKING | Prompt + style-tag enhancer (both modes tested) |
 | POST /api/set_visibility | WORKING | Publish/unpublish, verified via clip is_public |
