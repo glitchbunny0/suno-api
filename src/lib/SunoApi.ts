@@ -1616,6 +1616,42 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Change a clip's speed (optionally preserving pitch). Synchronous —
+   * returns the new clip object directly. Title defaults to "Name (1.5x)".
+   */
+  public async adjustClipSpeed(clipId: string, options: {
+    speed_multiplier: number;
+    keep_pitch?: boolean;
+    title?: string;
+  }): Promise<any> {
+    validateRequiredString(clipId, 'clipId');
+    validateNumber(options.speed_multiplier, 'speed_multiplier');
+    await this.keepAlive(false);
+    let title = options.title;
+    if (!title) {
+      const clip: any = await this.getClip(clipId);
+      const mult = options.speed_multiplier % 1 === 0
+        ? options.speed_multiplier.toFixed(0)
+        : options.speed_multiplier.toFixed(2);
+      title = `${clip?.title || 'Clip'} (${mult}x)`;
+    }
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/clips/adjust-speed/`, {
+        clip_id: clipId,
+        speed_multiplier: options.speed_multiplier,
+        keep_pitch: options.keep_pitch ?? false,
+        title
+      });
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Adjust speed failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────

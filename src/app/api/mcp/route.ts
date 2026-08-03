@@ -200,6 +200,25 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'adjust_speed',
+      {
+        description: 'Change a clip\'s speed, optionally preserving pitch. Returns the new clip.',
+        inputSchema: z.object({
+          clip_id: z.string(),
+          speed_multiplier: z.number().describe('e.g. 0.5 half-time, 1.5, 2 double-time'),
+          keep_pitch: z.boolean().optional().describe('Preserve pitch (default false)'),
+          title: z.string().optional()
+        })
+      },
+      async ({ clip_id, speed_multiplier, keep_pitch, title }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.adjustClipSpeed(clip_id, { speed_multiplier, keep_pitch, title }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',
