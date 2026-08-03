@@ -88,6 +88,30 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'cowrite_lyrics',
+      {
+        description:
+          'Edit lyrics with an instruction, e.g. "make the chorus more aggressive". ' +
+          'Pass the lyric fragment in selected; add context_before/context_after so the ' +
+          'edit fits the surrounding song. Returns edited_lyrics.',
+        inputSchema: z.object({
+          instruction: z.string().describe('What to change, e.g. "darker imagery, keep the rhyme scheme"'),
+          selected: z.string().describe('The lyric text to edit'),
+          context_before: z.string().optional().describe('Lyrics before the selection'),
+          context_after: z.string().optional().describe('Lyrics after the selection'),
+          lyricist_id: z.string().optional().describe('Lyricist persona id (simple mode)'),
+          lyrics_model: z.string().optional().describe('Lyrics model (context mode, default "default")')
+        })
+      },
+      async ({ instruction, selected, context_before, context_after, lyricist_id, lyrics_model }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.cowriteLyrics({ instruction, selected, context_before, context_after, lyricist_id, lyrics_model }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

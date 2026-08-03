@@ -1389,6 +1389,53 @@ class SunoApi {
       image_url: result.image_url
     };
   }
+
+  /**
+   * Co-write lyrics with Suno's lyric editor: apply an instruction to a
+   * selected piece of lyric, optionally with surrounding context.
+   * Mirrors the two frontend modes:
+   *   simple:  { instruction, selected, lyricist_id? }
+   *   context: { instruction, selected, context_before, context_after,
+   *              mode: 'apply_user_request', metadata: { lyrics_model } }
+   * Returns { edited_lyrics, artist_to_tag_mapping? }.
+   */
+  public async cowriteLyrics(options: {
+    instruction: string;
+    selected: string;
+    context_before?: string;
+    context_after?: string;
+    lyricist_id?: string;
+    lyrics_model?: string;
+  }): Promise<any> {
+    validateRequiredString(options.instruction, 'instruction');
+    validateRequiredString(options.selected, 'selected');
+    validateOptionalString(options.context_before, 'context_before');
+    validateOptionalString(options.context_after, 'context_after');
+    validateOptionalString(options.lyricist_id, 'lyricist_id');
+    validateOptionalString(options.lyrics_model, 'lyrics_model');
+    await this.keepAlive(false);
+    const body: any = {
+      instruction: options.instruction,
+      selected: options.selected
+    };
+    if (options.context_before !== undefined || options.context_after !== undefined || options.lyrics_model) {
+      body.context_before = options.context_before ?? '';
+      body.context_after = options.context_after ?? '';
+      body.mode = 'apply_user_request';
+      body.metadata = { lyrics_model: options.lyrics_model ?? 'default' };
+    } else if (options.lyricist_id) {
+      body.lyricist_id = options.lyricist_id;
+    }
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/generate/cowrite-lyrics`, body);
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Cowrite failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
