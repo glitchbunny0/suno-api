@@ -25,6 +25,7 @@
     "electron": "^33.2.1",
     "ghost-cursor-playwright": "^2.1.0",
     "js-cookie": "^3.0.5",
+    "mcp-handler": "^2.1.0",
     "next": "14.1.4",
     "next-swagger-doc": "^0.4.0",
     "pino": "^8.19.0",
@@ -37,7 +38,8 @@
     "tough-cookie": "^4.1.4",
     "user-agents": "^1.1.156",
     "utf-8-validate": "^6.0.5",
-    "yn": "^5.0.0"
+    "yn": "^5.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.12",
