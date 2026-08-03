@@ -1163,6 +1163,29 @@ class SunoApi {
       throw new Error(`Error response: ${response.statusText}`);
     return response.data;
   }
+
+  /**
+   * Get a lossless WAV download URL for a clip.
+   * If the clip was never converted, triggers conversion and polls
+   * (frontend behavior: 5s interval, up to 24 polls = 2 minutes).
+   */
+  public async getWavUrl(clipId: string): Promise<string> {
+    validateRequiredString(clipId, 'clipId');
+    await this.keepAlive(false);
+    const wavFileUrl = `${SunoApi.BASE_URL}/api/gen/${clipId}/wav_file/`;
+    const existing = await this.client.get(wavFileUrl);
+    if (existing.data?.wav_file_url)
+      return existing.data.wav_file_url;
+    logger.info(`No WAV for ${clipId} yet — triggering conversion`);
+    await this.client.post(`${SunoApi.BASE_URL}/api/gen/${clipId}/convert_wav/`);
+    for (let i = 0; i < 24; i++) {
+      await sleep(5, 5);
+      const poll = await this.client.get(wavFileUrl);
+      if (poll.data?.wav_file_url)
+        return poll.data.wav_file_url;
+    }
+    throw new Error('WAV conversion timed out after 2 minutes');
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
