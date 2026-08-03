@@ -1303,6 +1303,92 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Upload a local audio file to Suno (for extend/remix/covers).
+   * Mirrors the web frontend flow:
+   *   1. POST /api/uploads/audio/ -> presigned S3 POST params {id, url, fields}
+   *   2. multipart POST the file to S3 (fields first, file last)
+   *   3. POST upload-finish -> starts server-side processing
+   *   4. poll until status complete/error (4s interval, 5 min cap)
+   *   5. initialize-clip (best-effort) -> clip_id usable with extend/remix
+   *
+   * NOTE: agreed_to_vip_upload_terms is asserted — only upload audio you own
+   * or have rights to.
+   */
+  public async uploadAudio(filePath: string, options?: {
+    uploadType?: string;
+    isStemMix?: boolean;
+  }): Promise<{
+    upload_id: string;
+    clip_id: string | null;
+    title?: string;
+    has_vocal?: boolean;
+    inferred_description?: string;
+    image_url?: string;
+  }> {
+    validateRequiredString(filePath, 'filePath');
+    await this.keepAlive(false);
+    const fileBuffer = await fs.readFile(filePath);
+    const filename = path.basename(filePath);
+    const extension = filename.includes('.') ? filename.split('.')!.pop()!.toLowerCase() : 'mp3';
+    const uploadType = options?.uploadType ?? 'file_upload';
+    logger.info(`Uploading ${filename} (${fileBuffer.length} bytes, .${extension}) to Suno...`);
+
+    // 1. presigned S3 params
+    const paramsResp = await this.client.post(`${SunoApi.BASE_URL}/api/uploads/audio/`, {
+      extension,
+      is_stem_mix: options?.isStemMix ?? false,
+      upload_type: uploadType
+    });
+    const { id: uploadId, url, fields } = paramsResp.data ?? {};
+    if (!uploadId || !url)
+      throw new Error('Failed to fetch upload parameters from Suno');
+
+    // 2. S3 multipart POST (bare axios — different host, no session headers)
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields ?? {})) form.append(k, String(v));
+    form.append('file', new Blob([fileBuffer], { type: (fields as any)?.['Content-Type'] || 'application/octet-stream' }), filename);
+    await axios.post(url, form, { maxBodyLength: Infinity, maxContentLength: Infinity });
+
+    // 3. finish -> start processing
+    await this.client.post(`${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/upload-finish/`, {
+      upload_type: uploadType,
+      upload_filename: filename,
+      agreed_to_vip_upload_terms: true
+    });
+
+    // 4. poll for processing
+    let result: any = null;
+    const deadline = Date.now() + 300_000;
+    while (Date.now() < deadline) {
+      const poll = await this.client.get(`${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/`);
+      if (poll.data?.status === 'complete') { result = poll.data; break; }
+      if (poll.data?.status === 'error')
+        throw new Error(`Upload processing failed: ${poll.data?.error_message || poll.data?.error_type || 'unknown'}`);
+      await sleep(4, 4);
+    }
+    if (!result) throw new Error('Upload processing timed out after 5 minutes');
+
+    // 5. initialize-clip (best-effort — not fatal if it fails)
+    let clipId: string | null = null;
+    try {
+      const init = await this.client.post(`${SunoApi.BASE_URL}/api/uploads/audio/${uploadId}/initialize-clip/`, {});
+      clipId = init.data?.clip_id ?? null;
+    } catch (err) {
+      logger.warn(`initialize-clip failed (non-fatal): ${toError(err).message}`);
+    }
+
+    logger.info(`Upload complete: upload_id=${uploadId}, clip_id=${clipId}`);
+    return {
+      upload_id: uploadId,
+      clip_id: clipId,
+      title: result.title,
+      has_vocal: result.has_vocal,
+      inferred_description: result.inferred_description,
+      image_url: result.image_url
+    };
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
