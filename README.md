@@ -166,8 +166,18 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/get_aligned_lyrics`: Word-level lyric timestamps
 - `/api/clip`: Get clip information by `?id=`
 - `/api/concat`: Generate the whole song from extensions
-- `/api/persona`: Get persona information
+- `/api/persona`: Personas — `GET ?id=X&page=N` for persona clips, `GET` (no id) to list
+    your personas, `POST { root_clip_id, name?, description?, is_public? }` to create one
+- `/api/get_wav`: Lossless audio — `GET ?id=<clip_id>` returns `{ wav_file_url }`,
+    converting on first request
+- `/api/upsample_prompt`: Enhance prompts — `POST { original_prompt }` for song
+    descriptions or `POST { original_tags, user_guidance? }` for style tags
+- `/api/set_visibility`: Publish/unpublish — `POST { id, is_public }`
+- `/api/trash`: Trash clips — `POST { ids: [...] }` (`trash: false` restores)
 ```
+
+Only generation requires a CAPTCHA solve; all other endpoints work with just the account
+session.
 
 You can also pass cookies in the `Cookie` header of a request to override `SUNO_COOKIE` —
 handy for using multiple accounts.

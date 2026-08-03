@@ -11,11 +11,20 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | GET /api/get_limit | WORKING | Returns 2500 credits |
 | GET /api/get | WORKING | Song feed/retrieval |
 | GET /api/clip/:id | WORKING | Clip metadata |
-| GET /api/persona | WORKING | Persona info |
+| GET /api/persona | WORKING | List personas (no id) or persona clips (?id=) |
+| POST /api/persona | WORKING | Create persona from root_clip_id (one per clip) |
 | Auth (Clerk) | WORKING | Session via two-step navigation |
 | POST /api/generate | WORKING | Fixed Aug 3 — see below |
 | POST /api/custom_generate | WORKING | Same fix |
 | POST /api/generate_lyrics | UNTESTED | May need same payload updates |
+| GET /api/get_wav | WORKING | WAV download URL, converts on first request |
+| POST /api/upsample_prompt | WORKING | Prompt + style-tag enhancer (both modes tested) |
+| POST /api/set_visibility | WORKING | Publish/unpublish, verified via clip is_public |
+| POST /api/trash | WORKING | Trash/restore, verified via feed membership |
+
+All new endpoints verified against the live API on Aug 3, 2026.
+Only /api/generate + /api/custom_generate require a CAPTCHA solve
+(CaptchaConsumer has exactly one value: 'generation').
 
 Verified Aug 3, 2026: real generation returned 2 submitted clips on
 chirp-crow (v5) via 2Captcha-solved hCaptcha token.
