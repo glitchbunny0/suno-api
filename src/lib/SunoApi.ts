@@ -1263,6 +1263,46 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Set a clip's visibility (public/private on the Suno profile).
+   */
+  public async setClipVisibility(clipId: string, isPublic: boolean): Promise<void> {
+    validateRequiredString(clipId, 'clipId');
+    await this.keepAlive(false);
+    try {
+      await this.client.post(`${SunoApi.BASE_URL}/api/gen/${clipId}/set_visibility/`, {
+        is_public: isPublic,
+        submit_to_contest: false
+      });
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Set visibility failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Move clips to trash (or restore them with trash=false).
+   */
+  public async trashClips(clipIds: string[], trash: boolean = true): Promise<void> {
+    if (!Array.isArray(clipIds) || clipIds.length === 0)
+      throw new Error('clipIds must be a non-empty array');
+    clipIds.forEach((id, i) => validateRequiredString(id, `clipIds[${i}]`));
+    await this.keepAlive(false);
+    try {
+      await this.client.post(`${SunoApi.BASE_URL}/api/gen/trash`, {
+        trash,
+        clip_ids: clipIds
+      });
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Trash failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
