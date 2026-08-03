@@ -25,6 +25,7 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | POST /api/set_visibility | WORKING | Publish/unpublish, verified via clip is_public |
 | POST /api/trash | WORKING | Trash/restore, verified via feed membership |
 | POST /api/upload | WORKING | Local file → S3 presigned → processing → clip_id |
+| POST /api/extend_audio | WORKING | Fixed generation_type (TEXT, not EXTEND); upload→extend verified |
 
 All new endpoints verified against the live API on Aug 3, 2026.
 Only /api/generate + /api/custom_generate require a CAPTCHA solve
