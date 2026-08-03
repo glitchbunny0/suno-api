@@ -24,7 +24,7 @@
   the common case.
 - **Current generate endpoint.** Posts to `/api/generate/v2-web/` with the `token_provider`,
   `transaction_uuid` and `metadata` fields Suno's backend now expects.
-- **Suno v5 by default** (`chirp-crow`, not upstream's v3.5).
+- **Suno v5.5 by default** (`chirp-fenix`, not upstream's v3.5).
 - Two-step Clerk authentication (homepage → `/create`) for reliable session setup.
 - Configurable timeouts via `TIMEOUT_*` environment variables.
 - Input validation on all public methods, TypeScript interfaces for responses.

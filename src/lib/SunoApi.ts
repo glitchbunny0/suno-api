@@ -18,7 +18,7 @@ const cache = globalForSunoApi.sunoApiCache || new Map<string, SunoApi>();
 globalForSunoApi.sunoApiCache = cache;
 
 const logger = pino();
-export const DEFAULT_MODEL = 'chirp-crow'; // v5 (newest)
+export const DEFAULT_MODEL = 'chirp-fenix'; // v5.5 (newest)
 
 // ── Utility functions ──────────────────────────────────────────────
 
