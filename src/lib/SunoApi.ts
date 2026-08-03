@@ -464,15 +464,82 @@ class SunoApi {
           reject(toError(err));
         }
       });
+
+      // Also register fallback patterns — Suno sometimes changes the generate URL
+      for (const pattern of ['**/api/generate/v3/**', '**/api/generate/**']) {
+        page.route(pattern, async (route) => {
+          try {
+            const url = route.request().url();
+            // Skip if already matched by the primary route
+            if (url.includes('/api/generate/v2/')) return;
+            logger.info(`Token captured via fallback route: ${url}`);
+            route.abort();
+            const request = route.request();
+            const headers = request.headers();
+            if (headers.authorization)
+              this.currentToken = headers.authorization.split('Bearer ').pop();
+            browser.browser()?.close().catch(() => {});
+            controller.abort();
+            const postData = request.postDataJSON() as { token?: string; hcaptcha_token?: string } | null;
+            resolve(postData?.token || postData?.hcaptcha_token || null);
+          } catch (err) {
+            reject(toError(err));
+          }
+        });
+      }
     });
 
     // Fill the textarea and click Create
-    const textarea = page.locator('.custom-textarea');
+    // Suno changes their DOM frequently — try multiple selectors
+    let textarea = page.locator('.custom-textarea');
+    try {
+      await textarea.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.TEXTAREA_WAIT });
+      logger.info('Found .custom-textarea');
+    } catch {
+      // Fallback: find by placeholder pattern or any visible textarea
+      logger.info('.custom-textarea not found — trying fallback selectors');
+      // Dump the page HTML for debugging
+      const textareas = await page.locator('textarea').count();
+      logger.info(`Found ${textareas} textarea(s) on page`);
+      for (let i = 0; i < textareas; i++) {
+        const placeholder = await page.locator('textarea').nth(i).getAttribute('placeholder').catch(() => null);
+        const cls = await page.locator('textarea').nth(i).getAttribute('class').catch(() => null);
+        const visible = await page.locator('textarea').nth(i).isVisible().catch(() => false);
+        logger.info(`  textarea[${i}]: placeholder="${placeholder}" class="${cls}" visible=${visible}`);
+      }
+      textarea = page.locator('textarea:visible').first();
+      await textarea.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.TEXTAREA_WAIT });
+    }
     await this.click(textarea);
     await textarea.pressSequentially(process.env.CAPTCHA_TEST_PROMPT || 'Lorem ipsum', { delay: 80 });
+    logger.info('Textarea filled');
 
-    const button = page.locator('button[aria-label="Create"]').locator('div.flex');
-    this.click(button);
+    // Create button — try multiple selectors for different Suno UI versions
+    let button = page.locator('button[aria-label="Create"]').locator('div.flex');
+    try {
+      await button.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.CREATE_BUTTON_WAIT });
+      logger.info('Found Create button with div.flex selector');
+    } catch {
+      logger.info('Create button div.flex not found — trying alternatives');
+      // Dump buttons for debugging
+      const buttons = await page.locator('button').count();
+      logger.info(`Found ${buttons} button(s) on page`);
+      for (let i = 0; i < Math.min(buttons, 10); i++) {
+        const ariaLabel = await page.locator('button').nth(i).getAttribute('aria-label').catch(() => null);
+        const text = await page.locator('button').nth(i).innerText().catch(() => '');
+        const visible = await page.locator('button').nth(i).isVisible().catch(() => false);
+        if (visible && (ariaLabel || text.trim()))
+          logger.info(`  button[${i}]: aria="${ariaLabel}" text="${text.trim()}" visible=${visible}`);
+      }
+      button = page.locator('button[aria-label="Create song"]');
+      try {
+        await button.waitFor({ state: 'visible', timeout: SunoApi.TIMEOUTS.CREATE_BUTTON_WAIT });
+      } catch {
+        button = page.locator('button:has-text("Create"):visible');
+      }
+    }
+    logger.info('Clicking Create button...');
+    await this.click(button);
 
     // CAPTCHA solving loop
     const captchaSolvingPromise = new Promise<void>(async (resolve, reject) => {
@@ -481,10 +548,35 @@ class SunoApi {
       try {
         let shouldWaitForImages = true;
         while (true) {
-          if (shouldWaitForImages)
-            await waitForRequests(page, controller.signal);
+          if (shouldWaitForImages) {
+            // Upstream uses waitForRequests() which listens for hCaptcha image URLs,
+            // but Suno sometimes doesn't fire those requests before the challenge appears.
+            // Use a delay-based approach as fallback — more resilient to UI changes.
+            await sleep(SunoApi.TIMEOUTS.CAPTCHA_IMAGE_LOAD_DELAY);
+          }
 
-          const isDrag = (await challenge.locator('.prompt-text').first().innerText()).toLowerCase().includes('drag');
+          // Check if a visual challenge actually appeared.
+          // hCaptcha may pass invisibly based on browser fingerprint — if no
+          // challenge-container is visible within the timeout, the token was
+          // likely auto-passed and the route interceptor will handle it.
+          const challengeVisible = await challenge.isVisible().catch(() => false);
+          if (!challengeVisible) {
+            logger.info('No visible hCaptcha challenge — may have auto-passed. Waiting for token...');
+            // Wait a bit for the generate request to fire with the auto-passed token
+            await sleep(5);
+            // Check again — challenge might appear after a delay
+            const retryVisible = await challenge.isVisible().catch(() => false);
+            if (!retryVisible) {
+              logger.info('Still no challenge — resolving (token capture handled by route interceptor)');
+              resolve();
+              return;
+            }
+          }
+
+          const promptLocator = challenge.locator('.prompt-text').first();
+          await promptLocator.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+          const promptText = await promptLocator.innerText().catch(() => '');
+          const isDrag = promptText.toLowerCase().includes('drag');
           const solution = await this.solveCaptchaWithRetry(challenge, isDrag);
 
           if (isDrag) {
@@ -536,8 +628,28 @@ class SunoApi {
       throw error;
     });
 
-    await Promise.race([tokenPromise, captchaSolvingPromise]);
-    return tokenPromise;
+    // Race the solving loop against the token capture, with an overall timeout.
+    // If the captchaSolvingPromise resolves (e.g. no visual challenge appeared)
+    // but the generate request never fires through the route interceptor,
+    // we need to bail out instead of hanging forever.
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        logger.warn('getCaptcha overall timeout (30s) — returning null token');
+        browser.browser()?.close().catch(() => {});
+        controller.abort();
+        resolve(null);
+      }, 30000);
+    });
+
+    // tokenPromise resolves when the generate request fires (hCaptcha auto-passed or solved).
+    // captchaSolvingPromise resolves when the browser closes (solved) or no challenge.
+    // Whichever fires first wins; the timeout is the safety net.
+    const result = await Promise.race([
+      tokenPromise,
+      captchaSolvingPromise.then(() => tokenPromise),
+      timeoutPromise
+    ]);
+    return result;
   }
 
   // ── Generation ───────────────────────────────────────────────────
