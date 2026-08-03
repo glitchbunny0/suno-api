@@ -1230,6 +1230,39 @@ class SunoApi {
     });
     return response.data;
   }
+
+  /**
+   * Upsample a prompt or style tags into a richer version via Suno's enhancer.
+   * Two modes (matching the web frontend):
+   *   { original_prompt }                    — enhance a song description
+   *   { original_tags, user_guidance? }      — enhance style tags
+   * Returns { upsampled, artist_replacements? }.
+   */
+  public async upsamplePrompt(options: {
+    original_prompt?: string;
+    original_tags?: string;
+    user_guidance?: string;
+  }): Promise<any> {
+    validateOptionalString(options.original_prompt, 'original_prompt');
+    validateOptionalString(options.original_tags, 'original_tags');
+    validateOptionalString(options.user_guidance, 'user_guidance');
+    if (!options.original_prompt && !options.original_tags)
+      throw new Error('Either original_prompt or original_tags is required');
+    await this.keepAlive(false);
+    const body: any = {};
+    if (options.original_prompt) body.original_prompt = options.original_prompt;
+    if (options.original_tags) body.original_tags = options.original_tags;
+    if (options.user_guidance) body.user_guidance = options.user_guidance;
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/prompts/upsample`, body);
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Prompt upsample failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
