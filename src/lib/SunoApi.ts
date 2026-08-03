@@ -237,11 +237,22 @@ class SunoApi {
     this.currentToken = renewResponse.data.jwt;
   }
 
-  private async captchaRequired(): Promise<boolean> {
-    const resp = await this.client.post(`${SunoApi.BASE_URL}/api/c/check`, {
-      ctype: 'generation'
-    });
-    return resp.data.required;
+  /**
+   * Full captcha check: required flag + which captcha system Suno wants.
+   * captcha_version 1 = hCaptcha (via Suno's first-party endpoint), 2 = Turnstile.
+   */
+  private async captchaCheck(): Promise<{ required: boolean; version: 1 | 2 }> {
+    try {
+      const resp = await this.client.post(`${SunoApi.BASE_URL}/api/c/check`, {
+        ctype: 'generation'
+      });
+      const version: 1 | 2 = resp.data?.captcha_version === 2 ? 2 : 1;
+      logger.info(`captcha check: required=${resp.data?.required}, version=${version}`);
+      return { required: !!resp.data?.required, version };
+    } catch (err) {
+      logger.warn(`captcha check failed: ${toError(err).message} — assuming required, v1`);
+      return { required: true, version: 1 };
+    }
   }
 
   /**
@@ -315,6 +326,29 @@ class SunoApi {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Solve hCaptcha via 2Captcha — no browser needed.
+   * Suno currently gates generation with hCaptcha (captcha_version 1), rendered
+   * invisibly via their first-party enterprise endpoint (hcaptcha-endpoint-prod.suno.com).
+   * Sitekey recovered from the suno.com/create JS bundle (Aug 2026).
+   * Token validation is sitekey-based, so a standard 2Captcha solve should validate.
+   */
+  private static HCAPTCHA_SITEKEY = 'd65453de-3f1a-4aac-9366-a0f06e52b2ce';
+  private static HCAPTCHA_PAGEURL = 'https://suno.com/create';
+
+  private async solveHCaptchaDirect(): Promise<string | null> {
+    logger.info('Solving hCaptcha via 2Captcha sitekey method (no browser)...');
+    const startTime = Date.now();
+    const result = await this.solver.hcaptcha({
+      sitekey: SunoApi.HCAPTCHA_SITEKEY,
+      pageurl: SunoApi.HCAPTCHA_PAGEURL,
+      invisible: 1,
+    });
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    logger.info(`hCaptcha solved by 2Captcha in ${elapsed}s`);
+    return result.data;
   }
 
   // ── Browser / CAPTCHA ────────────────────────────────────────────
@@ -520,13 +554,14 @@ class SunoApi {
 
   /**
    * Check and solve CAPTCHA if required (v2 rewrite).
-   * Uses multi-selector polling, popup dismissal, route interception before click,
-   * multi-provider CAPTCHA detection, and debug snapshots.
-   * Serialized via captchaMutex — only one browser session at a time.
+   * Picks the solver based on Suno's captcha_version: 1 = hCaptcha, 2 = Turnstile.
+   * Returns the token plus the provider id for the payload's token_provider field.
+   * Serialized via captchaMutex — only one solver session at a time.
    */
-  public async getCaptcha(): Promise<string | null> {
-    if (!await this.captchaRequired())
-      return null;
+  public async getCaptcha(): Promise<{ token: string | null; provider: 1 | 2 | null }> {
+    const initial = await this.captchaCheck();
+    if (!initial.required)
+      return { token: null, provider: null };
 
     const releaseCaptcha = await this.captchaMutex.acquire();
     if (this.captchaMutex.queueLength > 0)
@@ -534,21 +569,29 @@ class SunoApi {
 
     try {
       // Re-check after lock — previous caller may have already solved it
-      if (!await this.captchaRequired())
-        return null;
+      const check = await this.captchaCheck();
+      if (!check.required)
+        return { token: null, provider: null };
 
-      // STRATEGY 1: Try 2Captcha Turnstile sitekey solver first (no browser, ~10-30s)
-      // This is the cleanest path — no DOM selectors, no bot detection.
+      // STRATEGY 1: 2Captcha sitekey solver (no browser, ~10-60s)
+      // Cleanest path — no DOM selectors, no bot detection.
       try {
-        const token = await this.solveTurnstileDirect();
-        if (token) return token;
-        logger.warn('Turnstile direct solver returned null — falling back to browser method');
+        if (check.version === 1) {
+          const token = await this.solveHCaptchaDirect();
+          if (token) return { token, provider: 1 };
+          logger.warn('hCaptcha direct solver returned null — falling back to browser method');
+        } else {
+          const token = await this.solveTurnstileDirect();
+          if (token) return { token, provider: 2 };
+          logger.warn('Turnstile direct solver returned null — falling back to browser method');
+        }
       } catch (e) {
-        logger.warn(`Turnstile direct solver failed: ${toError(e).message} — falling back to browser method`);
+        logger.warn(`2Captcha direct solver failed: ${toError(e).message} — falling back to browser method`);
       }
 
       // STRATEGY 2: Fall back to browser-based CAPTCHA solving (v2 rewrite)
-      return await this._solveCaptchaV2();
+      const token = await this._solveCaptchaV2();
+      return { token, provider: token ? check.version : null };
     } finally {
       releaseCaptcha();
     }
@@ -902,6 +945,7 @@ class SunoApi {
     continue_at?: number
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
+    const captcha = await this.getCaptcha();
     const payload: any = {
       make_instrumental,
       mv: model || DEFAULT_MODEL,
@@ -910,7 +954,15 @@ class SunoApi {
       continue_at,
       continue_clip_id,
       task,
-      token: await this.getCaptcha()
+      token: captcha.token,
+      token_provider: captcha.provider,
+      transaction_uuid: randomUUID(),
+      metadata: {
+        web_client_pathname: '/create',
+        create_mode: isCustom ? 'custom' : 'simple',
+        create_session_token: randomUUID(),
+        disable_volume_normalization: false
+      }
     };
     if (isCustom) {
       payload.tags = tags;
@@ -920,11 +972,20 @@ class SunoApi {
     } else {
       payload.gpt_description_prompt = prompt;
     }
-    const response = await this.client.post(
-      `${SunoApi.BASE_URL}/api/generate/v2/`,
-      payload,
-      { timeout: SunoApi.TIMEOUTS.API_GENERATE }
-    );
+    logger.info(`Generate payload: ${JSON.stringify({ ...payload, token: captcha.token ? '<redacted>' : null })}`);
+    let response;
+    try {
+      response = await this.client.post(
+        `${SunoApi.BASE_URL}/api/generate/v2-web/`,
+        payload,
+        { timeout: SunoApi.TIMEOUTS.API_GENERATE }
+      );
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Generate failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
     if (response.status !== 200)
       throw new Error(`Error response: ${response.statusText}`);
 
