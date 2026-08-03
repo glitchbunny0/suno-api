@@ -16,11 +16,12 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | Auth (Clerk) | WORKING | Session via two-step navigation |
 | POST /api/generate | WORKING | Fixed Aug 3 — see below |
 | POST /api/custom_generate | WORKING | Same fix |
-| POST /api/generate_lyrics | UNTESTED | May need same payload updates |
+| POST /api/generate_lyrics | WORKING | Verified Aug 3 (no token needed) |
 | GET /api/get_wav | WORKING | WAV download URL, converts on first request |
 | POST /api/upsample_prompt | WORKING | Prompt + style-tag enhancer (both modes tested) |
 | POST /api/set_visibility | WORKING | Publish/unpublish, verified via clip is_public |
 | POST /api/trash | WORKING | Trash/restore, verified via feed membership |
+| POST /api/upload | WORKING | Local file → S3 presigned → processing → clip_id |
 
 All new endpoints verified against the live API on Aug 3, 2026.
 Only /api/generate + /api/custom_generate require a CAPTCHA solve

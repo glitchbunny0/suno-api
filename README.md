@@ -174,6 +174,9 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
     descriptions or `POST { original_tags, user_guidance? }` for style tags
 - `/api/set_visibility`: Publish/unpublish — `POST { id, is_public }`
 - `/api/trash`: Trash clips — `POST { ids: [...] }` (`trash: false` restores)
+- `/api/upload`: Upload local audio for extend/remix — `POST { file_path }` (path on the
+    server). Returns `upload_id`, `clip_id` and Suno's analysis (BPM, key, vocals).
+    Asserts Suno's upload terms — only upload audio you own rights to.
 ```
 
 Only generation requires a CAPTCHA solve; all other endpoints work with just the account
