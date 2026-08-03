@@ -183,6 +183,12 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/upload`: Upload local audio for extend/remix — `POST { file_path }` (path on the
     server). Returns `upload_id`, `clip_id` and Suno's analysis (BPM, key, vocals).
     Asserts Suno's upload terms — only upload audio you own rights to.
+- `/api/crop`: Crop to a range or cut it out — `POST { id, start_s, end_s,
+    remove_section?, title? }`; async worker, returns `action_clip_id`
+- `/api/fade`: Fade-in/out — `POST { id, fade_in_time?, fade_out_time?, title? }`
+- `/api/adjust_speed`: Tempo change — `POST { id, speed_multiplier, keep_pitch?, title? }`
+- `/api/reverse`: Reverse audio — `POST { id, title? }` (instrumental clips only —
+    Suno rejects vocals with `not_allowed_on_vocal`)
 ```
 
 Only generation requires a CAPTCHA solve; all other endpoints work with just the account

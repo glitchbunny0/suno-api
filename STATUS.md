@@ -26,6 +26,10 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | POST /api/trash | WORKING | Trash/restore, verified via feed membership |
 | POST /api/upload | WORKING | Local file → S3 presigned → processing → clip_id |
 | POST /api/extend_audio | WORKING | Fixed generation_type (TEXT, not EXTEND); upload→extend verified |
+| POST /api/crop | WORKING | Exact-duration crop verified (89s → 40s) |
+| POST /api/fade | WORKING | Fade worker completes, clip in feed |
+| POST /api/adjust_speed | WORKING | 40s @1.5x → exact 26.67s |
+| POST /api/reverse | WORKING | Vocal clips rejected (not_allowed_on_vocal); instrumental verified |
 
 All new endpoints verified against the live API on Aug 3, 2026.
 Only /api/generate + /api/custom_generate require a CAPTCHA solve
