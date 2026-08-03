@@ -1521,6 +1521,63 @@ class SunoApi {
       throw err;
     }
   }
+
+  // ── Edit operations ─────────────────────────────────────────────
+
+  /**
+   * Poll an async edit action (crop/fade) until the worker finishes.
+   * Frontend behavior: GET /api/edit/action/{id}/ every 2s, 2 min cap.
+   */
+  private async pollEditAction(actionClipId: string, label: string): Promise<void> {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      await sleep(2, 2);
+      const resp = await this.client.get(`${SunoApi.BASE_URL}/api/edit/action/${actionClipId}/`);
+      if (resp.data?.status === 'complete') return;
+      if (resp.data?.status === 'error')
+        throw new Error(`${label} worker reported error`);
+    }
+    throw new Error(`${label} timed out after 2 minutes`);
+  }
+
+  /**
+   * Crop a clip to [start_s, end_s] — or with remove_section=true, CUT that
+   * range out and keep the rest. Returns the new clip's action_clip_id.
+   */
+  public async cropClip(clipId: string, options: {
+    start_s: number;
+    end_s: number;
+    remove_section?: boolean;
+    title?: string;
+  }): Promise<{ action_clip_id: string }> {
+    validateRequiredString(clipId, 'clipId');
+    validateNumber(options.start_s, 'start_s');
+    validateNumber(options.end_s, 'end_s');
+    await this.keepAlive(false);
+    let title = options.title;
+    if (!title) {
+      const clip: any = await this.getClip(clipId);
+      title = `${clip?.title || 'Clip'} (${options.remove_section ? 'Remove Section' : 'Crop'})`;
+    }
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/edit/crop/${clipId}/`, {
+        crop_start_s: options.start_s,
+        crop_end_s: options.end_s,
+        is_crop_remove: options.remove_section ?? false,
+        title,
+        ui_surface: 'song_actions'
+      });
+      const actionClipId = response.data?.action_clip_id;
+      if (!actionClipId) throw new Error('No action_clip_id in crop response');
+      await this.pollEditAction(actionClipId, 'Crop');
+      return { action_clip_id: actionClipId };
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Crop failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────

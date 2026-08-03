@@ -157,6 +157,28 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'crop_clip',
+      {
+        description:
+          'Crop a clip to a time range — or with remove_section=true, cut that range out ' +
+          'and keep the rest. Async worker, takes up to ~2 min. Returns the new action_clip_id.',
+        inputSchema: z.object({
+          clip_id: z.string(),
+          start_s: z.number().describe('Range start in seconds'),
+          end_s: z.number().describe('Range end in seconds'),
+          remove_section: z.boolean().optional().describe('Cut the range OUT instead of keeping it (default false)'),
+          title: z.string().optional()
+        })
+      },
+      async ({ clip_id, start_s, end_s, remove_section, title }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.cropClip(clip_id, { start_s, end_s, remove_section, title }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',
