@@ -950,7 +950,7 @@ class SunoApi {
       make_instrumental,
       mv: model || DEFAULT_MODEL,
       prompt: '',
-      generation_type: task === 'extend' ? 'EXTEND' : 'TEXT',
+      generation_type: 'TEXT',
       continue_at,
       continue_clip_id,
       task,
