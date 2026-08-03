@@ -112,6 +112,29 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'lyrics_infill',
+      {
+        description:
+          'Regenerate one section of lyrics while keeping the rest. prefix/suffix are ' +
+          'preserved verbatim; the edit section is rewritten following the prompt. ' +
+          'Returns generated_lyrics plus the stitched full_text.',
+        inputSchema: z.object({
+          prompt: z.string().describe('What the new section should be, e.g. "a bridge about letting go"'),
+          edit: z.string().describe('The lyric section to replace ("" to append after prefix)'),
+          prefix: z.string().optional().describe('Lyrics before the section (kept as-is)'),
+          suffix: z.string().optional().describe('Lyrics after the section (kept as-is)'),
+          title: z.string().optional()
+        })
+      },
+      async ({ prompt, edit, prefix, suffix, title }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.lyricsInfill({ prompt, edit, prefix, suffix, title }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

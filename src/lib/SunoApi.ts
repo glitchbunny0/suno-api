@@ -1436,6 +1436,58 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Regenerate one section of lyrics while keeping the rest.
+   * The frontend stitches: fullText = prefix + generated + suffix.
+   * Returns { generated_lyrics, full_text, lyrics_request_id, lyrics_id }.
+   * Suno rejects over-long input with 400 "Lyrics too long to enhance."
+   */
+  public async lyricsInfill(options: {
+    prompt: string;
+    edit: string;
+    prefix?: string;
+    suffix?: string;
+    title?: string;
+  }): Promise<any> {
+    validateRequiredString(options.prompt, 'prompt');
+    validateRequiredString(options.edit, 'edit');
+    validateOptionalString(options.prefix, 'prefix');
+    validateOptionalString(options.suffix, 'suffix');
+    validateOptionalString(options.title, 'title');
+    await this.keepAlive(false);
+    const prefix = options.prefix ?? '';
+    const suffix = options.suffix ?? '';
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/generate/lyrics-infill/`, {
+        prompt: options.prompt,
+        context_lyrics_prefix: prefix,
+        context_lyrics_edit: options.edit,
+        context_lyrics_suffix: suffix,
+        create_session_token: randomUUID(),
+        title: options.title ?? ''
+      });
+      let generated: string = response.data?.generated_lyrics ?? '';
+      // Frontend newline fixups so the stitch is seamless
+      if (generated.startsWith('[') && prefix.trim() && !prefix.endsWith('\n'))
+        generated = '\n' + generated;
+      if (options.edit.endsWith('\n') && generated && !generated.endsWith('\n'))
+        generated += '\n';
+      if (!options.edit && !suffix.trim() && prefix.trim() && generated && !generated.startsWith('\n'))
+        generated = '\n' + generated;
+      return {
+        generated_lyrics: generated,
+        full_text: prefix + generated + suffix,
+        lyrics_request_id: response.data?.lyrics_request_id,
+        lyrics_id: response.data?.lyrics_id
+      };
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Lyrics infill failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
