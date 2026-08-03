@@ -10,21 +10,14 @@ export async function GET(req: NextRequest) {
       const url = new URL(req.url);
       const personaId = url.searchParams.get('id');
       const page = url.searchParams.get('page');
-
-      if (personaId == null) {
-        return new NextResponse(JSON.stringify({ error: 'Missing parameter id' }), {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
-      }
-
       const pageNumber = page ? parseInt(page) : 1;
-      const personaInfo = await (await sunoApi()).getPersonaPaginated(personaId, pageNumber);
 
-      return new NextResponse(JSON.stringify(personaInfo), {
+      // No id -> list the account's personas; with id -> persona clips (paginated)
+      const data = personaId == null
+        ? await (await sunoApi()).getPersonas(pageNumber)
+        : await (await sunoApi()).getPersonaPaginated(personaId, pageNumber);
+
+      return new NextResponse(JSON.stringify(data), {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
@@ -46,6 +39,57 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Method Not Allowed', {
       headers: {
         Allow: 'GET',
+        ...corsHeaders
+      },
+      status: 405
+    });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  if (req.method === 'POST') {
+    try {
+      const body = await req.json();
+
+      if (!body.root_clip_id) {
+        return new NextResponse(JSON.stringify({ error: 'Missing parameter root_clip_id' }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        });
+      }
+
+      const persona = await (await sunoApi()).createPersona({
+        root_clip_id: body.root_clip_id,
+        name: body.name,
+        description: body.description,
+        is_public: body.is_public
+      });
+
+      return new NextResponse(JSON.stringify(persona), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    } catch (error) {
+      console.error('Error creating persona:', error);
+
+      return new NextResponse(JSON.stringify({ error: 'Internal server error. ' + error }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+  } else {
+    return new NextResponse('Method Not Allowed', {
+      headers: {
+        Allow: 'POST',
         ...corsHeaders
       },
       status: 405

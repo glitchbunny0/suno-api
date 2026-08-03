@@ -1186,6 +1186,50 @@ class SunoApi {
     }
     throw new Error('WAV conversion timed out after 2 minutes');
   }
+
+  /**
+   * Create a persona from a root clip (uses the clip's vocals as the persona's voice).
+   * Mirrors the web frontend: only root_clip_id is required; name defaults to 'Untitled'.
+   */
+  public async createPersona(options: {
+    root_clip_id: string;
+    name?: string;
+    description?: string;
+    is_public?: boolean;
+  }): Promise<any> {
+    validateRequiredString(options.root_clip_id, 'root_clip_id');
+    validateOptionalString(options.name, 'name');
+    validateOptionalString(options.description, 'description');
+    await this.keepAlive(false);
+    const body: any = {
+      root_clip_id: options.root_clip_id,
+      name: options.name || 'Untitled',
+      description: options.description || ''
+    };
+    if (options.is_public !== undefined) body.is_public = options.is_public;
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/persona/create/`, body);
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Persona create failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * List the account's personas (paginated).
+   */
+  public async getPersonas(page: number = 1): Promise<any> {
+    validateNumber(page, 'page');
+    await this.keepAlive(false);
+    const response = await this.client.get(`${SunoApi.BASE_URL}/api/persona/get-personas/`, {
+      params: { page },
+      timeout: SunoApi.TIMEOUTS.API_PERSONA
+    });
+    return response.data;
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
