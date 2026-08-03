@@ -244,6 +244,79 @@ class SunoApi {
     return resp.data.required;
   }
 
+  /**
+   * Solve Cloudflare Turnstile via 2Captcha sitekey method — no browser needed.
+   * 2Captcha workers solve the invisible challenge using just sitekey + page URL.
+   * Returns the cf_turnstile token string.
+   *
+   * The sitekey is extracted from suno.com/create's Turnstile widget.
+   * If Suno rotates the sitekey, we fall back to extracting it from the page.
+   */
+  private static TURNSTILE_SITEKEY = '0x4AAAAAADI7xDNyj-3LcIbi';
+  private static TURNSTILE_PAGEURL = 'https://suno.com/create';
+
+  private async solveTurnstileDirect(): Promise<string | null> {
+    logger.info('Solving Turnstile via 2Captcha sitekey method (no browser)...');
+    const startTime = Date.now();
+    try {
+      const result = await this.solver.cloudflareTurnstile({
+        sitekey: SunoApi.TURNSTILE_SITEKEY,
+        pageurl: SunoApi.TURNSTILE_PAGEURL,
+      });
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      logger.info(`Turnstile solved by 2Captcha in ${elapsed}s`);
+      return result.data;
+    } catch (err) {
+      const error = toError(err);
+      logger.error(`2Captcha Turnstile solve failed: ${error.message}`);
+      // If sitekey is wrong/expired, try extracting a fresh one from the page
+      logger.info('Attempting to extract fresh sitekey from suno.com/create...');
+      const freshSitekey = await this.extractTurnstileSitekey().catch(() => null);
+      if (freshSitekey && freshSitekey !== SunoApi.TURNSTILE_SITEKEY) {
+        logger.info(`Found different sitekey: ${freshSitekey}. Retrying...`);
+        SunoApi.TURNSTILE_SITEKEY = freshSitekey;
+        const retry = await this.solver.cloudflareTurnstile({
+          sitekey: freshSitekey,
+          pageurl: SunoApi.TURNSTILE_PAGEURL,
+        });
+        const elapsed2 = ((Date.now() - startTime) / 1000).toFixed(1);
+        logger.info(`Turnstile solved on retry in ${elapsed2}s`);
+        return retry.data;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch suno.com/create and extract the Turnstile sitekey from the HTML.
+   * Looks for data-sitekey attribute or the sitekey in the Turnstile iframe URL.
+   */
+  private async extractTurnstileSitekey(): Promise<string | null> {
+    try {
+      const response = await this.client.get('https://suno.com/create', {
+        timeout: 15000,
+        headers: { 'User-Agent': this.userAgent || undefined }
+      });
+      const html = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+
+      // Try data-sitekey attribute
+      const sitekeyMatch = html.match(/data-sitekey=["']([0-9a-zA-Zx-]+)["']/);
+      if (sitekeyMatch) return sitekeyMatch[1];
+
+      // Try Turnstile iframe URL pattern: /turnstile/.../SITEKEY/...
+      const turnstileMatch = html.match(/turnstile\/[^/]+\/[^/]+\/([0-9a-zA-Zx-]+)\//);
+      if (turnstileMatch) return turnstileMatch[1];
+
+      // Try cf-turnstile div with data-sitekey
+      const cfMatch = html.match(/cf-turnstile[^>]*data-sitekey=["']([0-9a-zA-Zx-]+)["']/);
+      if (cfMatch) return cfMatch[1];
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   // ── Browser / CAPTCHA ────────────────────────────────────────────
 
   private async click(target: Locator | Page, position?: { x: number, y: number }): Promise<void> {
@@ -464,6 +537,17 @@ class SunoApi {
       if (!await this.captchaRequired())
         return null;
 
+      // STRATEGY 1: Try 2Captcha Turnstile sitekey solver first (no browser, ~10-30s)
+      // This is the cleanest path — no DOM selectors, no bot detection.
+      try {
+        const token = await this.solveTurnstileDirect();
+        if (token) return token;
+        logger.warn('Turnstile direct solver returned null — falling back to browser method');
+      } catch (e) {
+        logger.warn(`Turnstile direct solver failed: ${toError(e).message} — falling back to browser method`);
+      }
+
+      // STRATEGY 2: Fall back to browser-based CAPTCHA solving (v2 rewrite)
       return await this._solveCaptchaV2();
     } finally {
       releaseCaptcha();
