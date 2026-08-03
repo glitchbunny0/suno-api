@@ -179,6 +179,27 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'fade_clip',
+      {
+        description:
+          'Apply fade-in and/or fade-out to a clip. Async worker, up to ~2 min. ' +
+          'Returns the new action_clip_id.',
+        inputSchema: z.object({
+          clip_id: z.string(),
+          fade_in_time: z.number().optional().describe('Fade-in seconds'),
+          fade_out_time: z.number().optional().describe('Fade-out seconds'),
+          title: z.string().optional()
+        })
+      },
+      async ({ clip_id, fade_in_time, fade_out_time, title }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.fadeClip(clip_id, { fade_in_time, fade_out_time, title }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

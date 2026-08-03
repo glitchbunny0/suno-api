@@ -1578,6 +1578,44 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Apply fade-in and/or fade-out to a clip (seconds, 0 to skip a side).
+   * Returns the new clip's action_clip_id.
+   */
+  public async fadeClip(clipId: string, options: {
+    fade_in_time?: number;
+    fade_out_time?: number;
+    title?: string;
+  }): Promise<{ action_clip_id: string }> {
+    validateRequiredString(clipId, 'clipId');
+    if (options.fade_in_time !== undefined) validateNumber(options.fade_in_time, 'fade_in_time');
+    if (options.fade_out_time !== undefined) validateNumber(options.fade_out_time, 'fade_out_time');
+    if (!options.fade_in_time && !options.fade_out_time)
+      throw new Error('At least one of fade_in_time or fade_out_time must be non-zero');
+    await this.keepAlive(false);
+    let title = options.title;
+    if (!title) {
+      const clip: any = await this.getClip(clipId);
+      title = `${clip?.title || 'Clip'} (Fade)`;
+    }
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/edit/fade/${clipId}/`, {
+        fade_in_time: options.fade_in_time ?? 0,
+        fade_out_time: options.fade_out_time ?? 0,
+        title
+      });
+      const actionClipId = response.data?.action_clip_id;
+      if (!actionClipId) throw new Error('No action_clip_id in fade response');
+      await this.pollEditAction(actionClipId, 'Fade');
+      return { action_clip_id: actionClipId };
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Fade failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
