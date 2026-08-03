@@ -135,6 +135,28 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'get_rhymes',
+      {
+        description:
+          'Rhyme suggestions for a word — perfect and slant rhymes, optionally aware ' +
+          'of the lyric line and genre style they should fit.',
+        inputSchema: z.object({
+          word: z.string().describe('Word to rhyme (min 2 chars)'),
+          context_line: z.string().optional().describe('The lyric line the rhyme should fit'),
+          style: z.string().optional().describe('Genre/style context'),
+          count: z.number().optional().describe('Max suggestions (default 16)'),
+          include_slant: z.boolean().optional().describe('Include near/slant rhymes (default true)')
+        })
+      },
+      async ({ word, context_line, style, count, include_slant }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getRhymes({ word, context_line, style, count, include_slant }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

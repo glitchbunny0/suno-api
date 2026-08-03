@@ -1488,6 +1488,39 @@ class SunoApi {
       throw err;
     }
   }
+
+  /**
+   * Rhyme suggestions for a word, optionally in the context of a lyric line.
+   * Returns { perfect: [...], slant: [...] }.
+   */
+  public async getRhymes(options: {
+    word: string;
+    context_line?: string;
+    style?: string;
+    count?: number;
+    include_slant?: boolean;
+  }): Promise<any> {
+    validateRequiredString(options.word, 'word');
+    validateOptionalString(options.context_line, 'context_line');
+    validateOptionalString(options.style, 'style');
+    if (options.count !== undefined) validateNumber(options.count, 'count');
+    await this.keepAlive(false);
+    try {
+      const response = await this.client.post(`${SunoApi.BASE_URL}/api/generate/rhymes/`, {
+        word: options.word,
+        context_line: options.context_line ?? '',
+        style: options.style ?? '',
+        count: options.count ?? 16,
+        include_slant: options.include_slant ?? true
+      });
+      return response.data;
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        logger.error(`Rhymes failed: HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+      }
+      throw err;
+    }
+  }
 }
 
 // ── Factory ────────────────────────────────────────────────────────
