@@ -236,6 +236,25 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      'concat_clip',
+      {
+        description:
+          'Merge an extended clip with its parent(s) into one whole song ("Get Whole Song" in the webapp). ' +
+          'Pass the ID of any clip in the extend chain — usually the latest extension. Returns a new clip that goes through the normal streaming/complete lifecycle; poll with get_clips.',
+        inputSchema: z.object({
+          clip_id: z.string().describe('ID of a clip in the extend chain (typically the extension)'),
+          is_infill: z.boolean().optional().describe('Set true when merging an infill edit (default false)')
+        })
+      },
+      async ({ clip_id, is_infill }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.concatenate(clip_id, is_infill ?? false));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
       'extend_audio',
       {
         description: 'Extend an existing clip from a given timestamp (in seconds). Requires a CAPTCHA solve (~60s).',

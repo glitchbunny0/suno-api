@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   if (req.method === 'POST') {
     try {
       const body = await req.json();
-      const { clip_id } = body;
+      const { clip_id, is_infill } = body;
       if (!clip_id) {
         return new NextResponse(JSON.stringify({ error: 'Clip id is required' }), {
           status: 400,
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
           }
         });
       }
-      const audioInfo = await (await sunoApi((await cookies()).toString())).concatenate(clip_id);
+      const audioInfo = await (await sunoApi((await cookies()).toString())).concatenate(clip_id, is_infill === true);
       return new NextResponse(JSON.stringify(audioInfo), {
         status: 200,
         headers: {

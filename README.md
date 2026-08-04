@@ -171,7 +171,7 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/generate_stems`: Make stem tracks (separate vocals and music)
 - `/api/get_aligned_lyrics`: Word-level lyric timestamps
 - `/api/clip`: Get clip information by `?id=`
-- `/api/concat`: Generate the whole song from extensions
+- `/api/concat`: Generate the whole song from extensions (v2; body: `clip_id`, optional `is_infill`)
 - `/api/persona`: Personas — `GET ?id=X&page=N` for persona clips, `GET` (no id) to list
     your personas, `POST { root_clip_id, name?, description?, is_public? }` to create one
 - `/api/get_wav`: Lossless audio — `GET ?id=<clip_id>` returns `{ wav_file_url }`,

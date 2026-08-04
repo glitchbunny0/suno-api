@@ -897,12 +897,12 @@ class SunoApi {
     return audios;
   }
 
-  public async concatenate(clip_id: string): Promise<AudioInfo> {
+  public async concatenate(clip_id: string, is_infill: boolean = false): Promise<AudioInfo> {
     validateRequiredString(clip_id, 'clip_id');
     await this.keepAlive(false);
     const response = await this.client.post<AudioInfo>(
       `${SunoApi.BASE_URL}/api/generate/concat/v2/`,
-      { clip_id },
+      { clip_id, is_infill },
       { timeout: SunoApi.TIMEOUTS.API_CONCATENATE }
     );
     if (response.status !== 200)
