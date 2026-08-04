@@ -31,6 +31,7 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | POST /api/adjust_speed | WORKING | 40s @1.5x → exact 26.67s |
 | POST /api/reverse | WORKING | Vocal clips rejected (not_allowed_on_vocal); instrumental verified |
 | POST /api/concat | WORKING | "Get Whole Song" — merges extend chain; is_infill flag added; verified Aug 4 (extension chain → 4:12 full song) |
+| GET/POST /api/playlist | WORKING | Full CRUD verified Aug 4: create, list, get, set_metadata, v2 tracks add/remove, v2 trash |
 | POST /api/generate_stems | UNTESTED | Legacy upstream code; no stem endpoints found in current webapp bundles — likely dead |
 
 All new endpoints verified against the live API on Aug 3, 2026.

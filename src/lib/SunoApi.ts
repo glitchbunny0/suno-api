@@ -107,6 +107,26 @@ interface PersonaResponse {
   is_following: boolean;
 }
 
+export interface PlaylistInfo {
+  id: string;
+  name: string;
+  description?: string;
+  image_url?: string;
+  is_public?: boolean;
+  is_trashed?: boolean;
+  num_clips?: number;
+  playlist_clips?: Array<{ clip: AudioInfo }>;
+  created_at?: string;
+  [key: string]: any;
+}
+
+export interface PlaylistListResponse {
+  playlists: PlaylistInfo[];
+  total_results?: number;
+  current_page?: number;
+  [key: string]: any;
+}
+
 interface BoundingBox {
   x: number;
   y: number;
@@ -908,6 +928,89 @@ class SunoApi {
     if (response.status !== 200)
       throw new Error(`Error response: ${response.statusText}`);
     return response.data;
+  }
+
+  // ── Playlists ──────────────────────────────────────────────────
+
+  public async createPlaylist(name: string = 'Untitled'): Promise<PlaylistInfo> {
+    await this.keepAlive(false);
+    const response = await this.client.post<PlaylistInfo>(
+      `${SunoApi.BASE_URL}/api/playlist/create/`,
+      { name },
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async getPlaylists(page: number = 1): Promise<PlaylistListResponse> {
+    await this.keepAlive(false);
+    const response = await this.client.get<PlaylistListResponse>(
+      `${SunoApi.BASE_URL}/api/playlist/me`,
+      { params: { page }, timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async getPlaylist(playlist_id: string, page: number = 1): Promise<PlaylistInfo> {
+    validateRequiredString(playlist_id, 'playlist_id');
+    await this.keepAlive(false);
+    const response = await this.client.get<PlaylistInfo>(
+      `${SunoApi.BASE_URL}/api/playlist/${playlist_id}/`,
+      { params: { page }, timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async setPlaylistMetadata(
+    playlist_id: string,
+    opts: { name?: string; description?: string; image_url?: string }
+  ): Promise<any> {
+    validateRequiredString(playlist_id, 'playlist_id');
+    await this.keepAlive(false);
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/playlist/set_metadata`,
+      { playlist_id, ...opts },
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async addToPlaylist(playlist_id: string, clip_ids: string[]): Promise<void> {
+    validateRequiredString(playlist_id, 'playlist_id');
+    if (!clip_ids?.length) throw new Error('clip_ids must be a non-empty array');
+    await this.keepAlive(false);
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/playlist/v2/${playlist_id}/tracks/add`,
+      { clip_ids },
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    if (response.status >= 300)
+      throw new Error(`Failed to add tracks: HTTP ${response.status}`);
+  }
+
+  public async removeFromPlaylist(playlist_id: string, clip_ids: string[]): Promise<void> {
+    validateRequiredString(playlist_id, 'playlist_id');
+    if (!clip_ids?.length) throw new Error('clip_ids must be a non-empty array');
+    await this.keepAlive(false);
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/playlist/v2/${playlist_id}/tracks/remove`,
+      { clip_ids },
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    if (response.status >= 300)
+      throw new Error(`Failed to remove tracks: HTTP ${response.status}`);
+  }
+
+  public async trashPlaylist(playlist_id: string, undo: boolean = false): Promise<void> {
+    validateRequiredString(playlist_id, 'playlist_id');
+    await this.keepAlive(false);
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/playlist/v2/${playlist_id}/trash`,
+      { undo },
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    if (response.status >= 300)
+      throw new Error(`Failed to trash playlist: HTTP ${response.status}`);
   }
 
   public async custom_generate(

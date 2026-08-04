@@ -254,6 +254,130 @@ const handler = createMcpHandler(
       }
     );
 
+    // ── Playlists ───────────────────────────────────────────────
+
+    server.registerTool(
+      'create_playlist',
+      {
+        description: 'Create a new playlist. Returns the playlist object.',
+        inputSchema: z.object({
+          name: z.string().optional().describe('Playlist name (default "Untitled")')
+        })
+      },
+      async ({ name }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.createPlaylist(name));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'get_playlists',
+      {
+        description: 'List your playlists (paginated).',
+        inputSchema: z.object({
+          page: z.number().optional()
+        })
+      },
+      async ({ page }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getPlaylists(page ?? 1));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'get_playlist',
+      {
+        description: 'Get a single playlist with its clips (paginated).',
+        inputSchema: z.object({
+          playlist_id: z.string(),
+          page: z.number().optional()
+        })
+      },
+      async ({ playlist_id, page }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getPlaylist(playlist_id, page ?? 1));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'update_playlist',
+      {
+        description: 'Update playlist metadata: name, description, and/or cover image URL.',
+        inputSchema: z.object({
+          playlist_id: z.string(),
+          name: z.string().optional(),
+          description: z.string().optional(),
+          image_url: z.string().optional()
+        })
+      },
+      async ({ playlist_id, name, description, image_url }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.setPlaylistMetadata(playlist_id, { name, description, image_url }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'playlist_add_tracks',
+      {
+        description: 'Add clips to a playlist.',
+        inputSchema: z.object({
+          playlist_id: z.string(),
+          clip_ids: z.array(z.string()).describe('Clip IDs to add')
+        })
+      },
+      async ({ playlist_id, clip_ids }) => {
+        try {
+          const api = await sunoApi();
+          await api.addToPlaylist(playlist_id, clip_ids);
+          return ok({ success: true });
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'playlist_remove_tracks',
+      {
+        description: 'Remove clips from a playlist.',
+        inputSchema: z.object({
+          playlist_id: z.string(),
+          clip_ids: z.array(z.string()).describe('Clip IDs to remove')
+        })
+      },
+      async ({ playlist_id, clip_ids }) => {
+        try {
+          const api = await sunoApi();
+          await api.removeFromPlaylist(playlist_id, clip_ids);
+          return ok({ success: true });
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'trash_playlist',
+      {
+        description: 'Trash a playlist (or restore with undo=true).',
+        inputSchema: z.object({
+          playlist_id: z.string(),
+          undo: z.boolean().optional().describe('Set true to restore from trash')
+        })
+      },
+      async ({ playlist_id, undo }) => {
+        try {
+          const api = await sunoApi();
+          await api.trashPlaylist(playlist_id, undo ?? false);
+          return ok({ success: true });
+        } catch (e) { return fail(e); }
+      }
+    );
+
     server.registerTool(
       'extend_audio',
       {

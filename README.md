@@ -172,6 +172,9 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/get_aligned_lyrics`: Word-level lyric timestamps
 - `/api/clip`: Get clip information by `?id=`
 - `/api/concat`: Generate the whole song from extensions (v2; body: `clip_id`, optional `is_infill`)
+- `/api/playlist`: Playlists — `GET` list (`?page=N`) or single (`?id=X&page=N`);
+  `POST {name}` create; `POST {action:'update'|'add'|'remove'|'trash', playlist_id, ...}`
+  for metadata, track add/remove (`clip_ids[]`), and trash (`undo:true` restores)
 - `/api/persona`: Personas — `GET ?id=X&page=N` for persona clips, `GET` (no id) to list
     your personas, `POST { root_clip_id, name?, description?, is_public? }` to create one
 - `/api/get_wav`: Lossless audio — `GET ?id=<clip_id>` returns `{ wav_file_url }`,
