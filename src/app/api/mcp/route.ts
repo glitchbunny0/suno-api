@@ -254,6 +254,35 @@ const handler = createMcpHandler(
       }
     );
 
+    server.registerTool(
+      'cover_clip',
+      {
+        description:
+          'Reimagine an existing clip in a new style (Suno "Cover"). Keeps the source melody/structure; ' +
+          'provide new style tags and optionally new lyrics. Returns 2 clips to poll with get_clips.',
+        inputSchema: z.object({
+          clip_id: z.string().describe('ID of the clip to cover'),
+          tags: z.string().optional().describe('New style tags'),
+          prompt: z.string().optional().describe('New lyrics (omit to keep the original\'s)'),
+          title: z.string().optional(),
+          negative_tags: z.string().optional(),
+          model: z.string().optional(),
+          wait_audio: z.boolean().optional(),
+          cover_start_s: z.number().optional().describe('Only use the source from this second'),
+          cover_end_s: z.number().optional().describe('Only use the source up to this second')
+        })
+      },
+      async ({ clip_id, tags, prompt, title, negative_tags, model, wait_audio, cover_start_s, cover_end_s }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.coverClip(
+            clip_id, prompt ?? '', tags ?? '', negative_tags ?? '', title ?? '',
+            model, wait_audio ?? false, cover_start_s, cover_end_s
+          ));
+        } catch (e) { return fail(e); }
+      }
+    );
+
     // ── Playlists ───────────────────────────────────────────────
 
     server.registerTool(

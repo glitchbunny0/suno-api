@@ -1145,7 +1145,10 @@ class SunoApi {
     negative_tags?: string,
     task?: string,
     continue_clip_id?: string,
-    continue_at?: number
+    continue_at?: number,
+    cover_clip_id?: string,
+    cover_start_s?: number | null,
+    cover_end_s?: number | null
   ): Promise<AudioInfo[]> {
     await this.keepAlive();
     const captcha = await this.getCaptcha();
@@ -1157,6 +1160,9 @@ class SunoApi {
       continue_at,
       continue_clip_id,
       task,
+      cover_clip_id,
+      cover_start_s,
+      cover_end_s,
       token: captcha.token,
       token_provider: captcha.provider,
       transaction_uuid: randomUUID(),
@@ -1263,6 +1269,24 @@ class SunoApi {
     validateRequiredString(audioId, 'audioId');
     validateNumber(continueAt, 'continueAt');
     return this.generateSongs(prompt, true, tags, title, false, model, wait_audio, negative_tags, 'extend', audioId, continueAt);
+  }
+
+  public async coverClip(
+    audioId: string,
+    prompt: string = '',
+    tags: string = '',
+    negative_tags: string = '',
+    title: string = '',
+    model?: string,
+    wait_audio?: boolean,
+    cover_start_s?: number,
+    cover_end_s?: number
+  ): Promise<AudioInfo[]> {
+    validateRequiredString(audioId, 'audioId');
+    return this.generateSongs(
+      prompt, true, tags, title, false, model, wait_audio, negative_tags,
+      'cover', undefined, undefined, audioId, cover_start_s ?? null, cover_end_s ?? null
+    );
   }
 
   public async generateStems(song_id: string): Promise<AudioInfo[]> {
