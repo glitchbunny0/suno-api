@@ -34,6 +34,7 @@ Generated: August 3, 2026 (updated: generation FIXED same day)
 | GET/POST /api/playlist | WORKING | Full CRUD verified Aug 4: create, list, get, set_metadata, v2 tracks add/remove, v2 trash |
 | GET/POST/PATCH/DELETE /api/lyricists | WORKING | Full CRUD verified Aug 4; Suno auto-generates ai_description from samples |
 | POST /api/cover | WORKING | Suno "Cover" — reimagine clip in new style; verified Aug 4, metadata.cover_clip_id links source |
+| GET/POST /api/video | WORKING | Music video per clip; verified Aug 4 (complete + playable mp4 in ~45s). Remaster = cover with unchanged style + newer model (no dedicated endpoint in webapp bundles) |
 | POST /api/generate_stems | UNTESTED | Legacy upstream code; no stem endpoints found in current webapp bundles — likely dead |
 
 All new endpoints verified against the live API on Aug 3, 2026.

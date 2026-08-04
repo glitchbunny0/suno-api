@@ -1113,6 +1113,29 @@ class SunoApi {
       throw new Error(`Failed to delete lyricist: HTTP ${response.status}`);
   }
 
+  // ── Video ──────────────────────────────────────────────────────
+
+  public async generateVideo(clip_id: string): Promise<any> {
+    validateRequiredString(clip_id, 'clip_id');
+    await this.keepAlive(false);
+    const response = await this.client.post(
+      `${SunoApi.BASE_URL}/api/video/generate/${clip_id}/`,
+      {},
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async getVideoStatus(clip_id: string): Promise<{ status: string; video_url?: string }> {
+    validateRequiredString(clip_id, 'clip_id');
+    await this.keepAlive(false);
+    const response = await this.client.get<{ status: string; video_url?: string }>(
+      `${SunoApi.BASE_URL}/api/video/generate/${clip_id}/status/`,
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
   public async custom_generate(
     prompt: string,
     tags: string,

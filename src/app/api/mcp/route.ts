@@ -501,6 +501,41 @@ const handler = createMcpHandler(
       }
     );
 
+    // ── Video ───────────────────────────────────────────────────
+
+    server.registerTool(
+      'generate_video',
+      {
+        description:
+          'Start music video generation for a clip. Video renders in the background; poll with get_video_status.',
+        inputSchema: z.object({
+          clip_id: z.string()
+        })
+      },
+      async ({ clip_id }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.generateVideo(clip_id));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'get_video_status',
+      {
+        description: 'Poll music video generation status for a clip. Returns { status, video_url? }.',
+        inputSchema: z.object({
+          clip_id: z.string()
+        })
+      },
+      async ({ clip_id }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getVideoStatus(clip_id));
+        } catch (e) { return fail(e); }
+      }
+    );
+
     server.registerTool(
       'extend_audio',
       {

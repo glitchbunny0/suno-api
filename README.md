@@ -155,7 +155,10 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/concat`: Generate the whole song from extensions (v2; body: `clip_id`, optional `is_infill`)
 - `/api/cover`: Suno "Cover" — reimagine a clip in a new style: `POST { audio_id, tags?,
     prompt?, title?, cover_start_s?, cover_end_s?, ... }`; keeps source melody/structure,
-    new tags/lyrics applied
+    new tags/lyrics applied. (The webapp's "Remaster" is this same flow with unchanged
+    style and a newer model.)
+- `/api/video`: Music video for a clip — `POST { clip_id }` starts rendering,
+    `GET ?id=<clip_id>` polls `{ status, video_url? }`
 - `/api/upsample_prompt`: Enhance prompts — `POST { original_prompt }` for song
     descriptions or `POST { original_tags, user_guidance? }` for style tags
 
@@ -216,9 +219,9 @@ handy for using multiple accounts.
 ## MCP Server
 
 The API doubles as an [MCP](https://modelcontextprotocol.io) server (streamable HTTP) at
-`http://localhost:3000/api/mcp`, exposing 36 tools: generation, custom mode, extend,
-concat, cover, lyrics (generate/cowrite/infill/rhymes/aligned), lyricists, editing
-(crop/fade/speed/reverse), upload, WAV, personas, playlists, visibility and trash.
+`http://localhost:3000/api/mcp`, exposing 38 tools: generation, custom mode, extend,
+concat, cover, music video, lyrics (generate/cowrite/infill/rhymes/aligned), lyricists,
+editing (crop/fade/speed/reverse), upload, WAV, personas, playlists, visibility and trash.
 
 Register it with any MCP client, e.g. with [Hermes](https://github.com/NousResearch/hermes-agent):
 
