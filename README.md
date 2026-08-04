@@ -166,6 +166,11 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 - `/api/rhymes`: Rhyme suggestions — `POST { word, context_line?, style?, count?,
     include_slant? }` returns `{ perfect, slant }`
 - `/api/get_aligned_lyrics`: Word-level lyric timestamps
+- `/api/lyricists`: Lyricist profiles (reusable writing styles for cowrite) —
+    `GET` list (`?limit&cursor`) or single (`?id=X`); `POST {name, description?,
+    sample_lyrics?[]}` create; `PATCH {id, name?, description?, sample_lyrics?,
+    is_favorited?}` update; `DELETE {id}`. Suno auto-generates an `ai_description`
+    style analysis from the samples
 
 **Editing**
 
@@ -208,9 +213,9 @@ handy for using multiple accounts.
 ## MCP Server
 
 The API doubles as an [MCP](https://modelcontextprotocol.io) server (streamable HTTP) at
-`http://localhost:3000/api/mcp`, exposing 30 tools: generation, custom mode, extend,
-concat, lyrics (generate/cowrite/infill/rhymes/aligned), editing (crop/fade/speed/reverse),
-upload, WAV, personas, playlists, visibility and trash.
+`http://localhost:3000/api/mcp`, exposing 35 tools: generation, custom mode, extend,
+concat, lyrics (generate/cowrite/infill/rhymes/aligned), lyricists, editing
+(crop/fade/speed/reverse), upload, WAV, personas, playlists, visibility and trash.
 
 Register it with any MCP client, e.g. with [Hermes](https://github.com/NousResearch/hermes-agent):
 

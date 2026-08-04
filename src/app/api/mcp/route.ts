@@ -378,6 +378,100 @@ const handler = createMcpHandler(
       }
     );
 
+    // ── Lyricists ───────────────────────────────────────────────
+
+    server.registerTool(
+      'get_lyricists',
+      {
+        description:
+          'List lyricist profiles (reusable AI writing styles that feed cowrite_lyrics via lyricist_id). Cursor-paginated.',
+        inputSchema: z.object({
+          limit: z.number().optional(),
+          cursor: z.string().optional()
+        })
+      },
+      async ({ limit, cursor }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getLyricists(limit ?? 100, cursor));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'get_lyricist',
+      {
+        description: 'Get a single lyricist with its sample lyrics.',
+        inputSchema: z.object({
+          lyricist_id: z.string()
+        })
+      },
+      async ({ lyricist_id }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.getLyricist(lyricist_id));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'create_lyricist',
+      {
+        description:
+          'Create a lyricist profile: a name, a writing-style description, and sample lyrics that define the voice.',
+        inputSchema: z.object({
+          name: z.string(),
+          description: z.string().optional().describe('Writing style description'),
+          sample_lyrics: z.array(z.string()).optional().describe('Sample lyric snippets')
+        })
+      },
+      async ({ name, description, sample_lyrics }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.createLyricist(name, { description, sample_lyrics }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'update_lyricist',
+      {
+        description: 'Update a lyricist: name, writing style, samples, or favorite flag.',
+        inputSchema: z.object({
+          lyricist_id: z.string(),
+          name: z.string().optional(),
+          description: z.string().optional(),
+          sample_lyrics: z.array(z.string()).optional(),
+          is_favorited: z.boolean().optional()
+        })
+      },
+      async ({ lyricist_id, name, description, sample_lyrics, is_favorited }) => {
+        try {
+          const api = await sunoApi();
+          return ok(await api.updateLyricist(lyricist_id, {
+            name, description, sample_lyrics, is_favorited
+          }));
+        } catch (e) { return fail(e); }
+      }
+    );
+
+    server.registerTool(
+      'delete_lyricist',
+      {
+        description: 'Permanently delete a lyricist profile.',
+        inputSchema: z.object({
+          lyricist_id: z.string()
+        })
+      },
+      async ({ lyricist_id }) => {
+        try {
+          const api = await sunoApi();
+          await api.deleteLyricist(lyricist_id);
+          return ok({ success: true });
+        } catch (e) { return fail(e); }
+      }
+    );
+
     server.registerTool(
       'extend_audio',
       {

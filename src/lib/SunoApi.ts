@@ -127,6 +127,16 @@ export interface PlaylistListResponse {
   [key: string]: any;
 }
 
+export interface LyricistInfo {
+  id: string;
+  title: string;
+  description?: string;
+  is_favorited?: boolean;
+  created_at?: string;
+  samples?: Array<{ kind: string; text: string }>;
+  [key: string]: any;
+}
+
 interface BoundingBox {
   x: number;
   y: number;
@@ -1011,6 +1021,96 @@ class SunoApi {
     );
     if (response.status >= 300)
       throw new Error(`Failed to trash playlist: HTTP ${response.status}`);
+  }
+
+  // ── Lyricists ──────────────────────────────────────────────────
+
+  public async getLyricists(
+    limit: number = 100,
+    cursor?: string
+  ): Promise<{ lyricists: LyricistInfo[]; next_cursor?: string }> {
+    await this.keepAlive(false);
+    const response = await this.client.get<{ lyricists: LyricistInfo[]; next_cursor?: string }>(
+      `${SunoApi.BASE_URL}/api/lyricists`,
+      { params: { limit, ...(cursor ? { cursor } : {}) }, timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async getLyricist(lyricist_id: string): Promise<LyricistInfo> {
+    validateRequiredString(lyricist_id, 'lyricist_id');
+    await this.keepAlive(false);
+    const response = await this.client.get<LyricistInfo>(
+      `${SunoApi.BASE_URL}/api/lyricists/${lyricist_id}`,
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  private static lyricistBody(
+    name?: string,
+    description?: string,
+    sample_lyrics?: string[]
+  ): Record<string, any> {
+    const body: Record<string, any> = {};
+    if (name !== undefined) body.title = name;
+    if (description !== undefined) body.description = description;
+    if (sample_lyrics !== undefined)
+      body.samples = sample_lyrics
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => ({ kind: 'text', text: s }));
+    return body;
+  }
+
+  public async createLyricist(
+    name: string,
+    opts: { description?: string; sample_lyrics?: string[] } = {}
+  ): Promise<LyricistInfo> {
+    validateRequiredString(name, 'name');
+    await this.keepAlive(false);
+    const response = await this.client.post<LyricistInfo>(
+      `${SunoApi.BASE_URL}/api/lyricists`,
+      SunoApi.lyricistBody(name, opts.description ?? '', opts.sample_lyrics),
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async updateLyricist(
+    lyricist_id: string,
+    opts: {
+      name?: string;
+      description?: string;
+      sample_lyrics?: string[];
+      is_favorited?: boolean;
+    }
+  ): Promise<LyricistInfo> {
+    validateRequiredString(lyricist_id, 'lyricist_id');
+    await this.keepAlive(false);
+    const body: Record<string, any> = SunoApi.lyricistBody(
+      opts.name,
+      opts.description,
+      opts.sample_lyrics
+    );
+    if (opts.is_favorited !== undefined) body.is_favorited = opts.is_favorited;
+    const response = await this.client.patch<LyricistInfo>(
+      `${SunoApi.BASE_URL}/api/lyricists/${lyricist_id}`,
+      body,
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    return response.data;
+  }
+
+  public async deleteLyricist(lyricist_id: string): Promise<void> {
+    validateRequiredString(lyricist_id, 'lyricist_id');
+    await this.keepAlive(false);
+    const response = await this.client.delete(
+      `${SunoApi.BASE_URL}/api/lyricists/${lyricist_id}`,
+      { timeout: SunoApi.TIMEOUTS.API_FEED }
+    );
+    if (response.status >= 300)
+      throw new Error(`Failed to delete lyricist: HTTP ${response.status}`);
   }
 
   public async custom_generate(
