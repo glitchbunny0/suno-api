@@ -1,57 +1,49 @@
 <div align="center">
   <h1 align="center">Suno AI API</h1>
-  <p>Unofficial API for Suno.ai music generation — community-maintained fork with working generation.</p>
+  <p>Unofficial API for Suno.ai music generation — generation, lyrics, editing, playlists, personas, and an MCP server for AI agents.</p>
 </div>
 
 ![suno-api banner](public/suno-banner.png)
 
-> [!IMPORTANT]
-> **This is a fork.** The original project, [gcui-art/suno-api](https://github.com/gcui-art/suno-api),
-> is effectively unmaintained (see upstream issue #262), and its generation endpoint has been
-> broken since Suno's create-page redesign (`422 token_validation_failed`, upstream issues
-> #263 / #269).
->
-> This fork fixes generation (August 2026) and tracks Suno's current web API.
-> The fix is also submitted upstream as [PR #286](https://github.com/gcui-art/suno-api/pull/286).
-> All credit for the original project goes to gcui-art and its contributors; this fork also
-> incorporates improvements from the zach-fau fork and upstream PR #271 (aqeel-spec).
+## Features
 
-## What's different in this fork
-
-- **Generation works.** CAPTCHA handling is driven by Suno's `/api/c/check` response:
-  `captcha_version: 1` = hCaptcha (invisible), `captcha_version: 2` = Cloudflare Turnstile.
-  The correct challenge is solved via [2Captcha](https://2captcha.com) — no browser needed in
-  the common case.
-- **Current generate endpoint.** Posts to `/api/generate/v2-web/` with the `token_provider`,
-  `transaction_uuid` and `metadata` fields Suno's backend now expects.
-- **Suno v5.5 by default** (`chirp-fenix`, not upstream's v3.5).
-- Two-step Clerk authentication (homepage → `/create`) for reliable session setup.
-- Configurable timeouts via `TIMEOUT_*` environment variables.
-- Input validation on all public methods, TypeScript interfaces for responses.
-- Persona API endpoint (`/api/persona`).
-- Ported CAPTCHA v2 browser fallback (multi-selector polling, debug snapshots, popup
-  dismissal, mutex-serialized solving) from upstream PR #271.
+- **Music generation** — text prompts and Custom Mode (lyrics, styles, title).
+  Suno v5.5 (`chirp-fenix`) by default; v5, v4.5+ and v4.5 selectable per request.
+- **CAPTCHA handled for you** — Suno's captcha is risk-based and version-driven
+  (`/api/c/check` selects hCaptcha or Cloudflare Turnstile). The matching challenge is
+  solved via [2Captcha](https://2captcha.com) — no browser needed in the common case.
+- **Lyrics suite** — generate lyrics, edit them by instruction (cowrite), regenerate a
+  single section (infill), and get context-aware rhyme suggestions.
+- **Audio editing** — extend a song, merge an extend chain into the whole song (concat),
+  crop, fade, change speed (pitch-preserving optional), reverse.
+- **Upload your own audio** — local file → Suno clip with BPM/key/vocal analysis, ready
+  for extend or remix.
+- **Library management** — playlists (create, rename, add/remove tracks, trash), personas,
+  publish/unpublish, trash/restore, lossless WAV download.
+- **MCP server** — 30 tools at `/api/mcp` (streamable HTTP) for agent integrations
+  (Hermes, Claude Code, Cursor, …).
+- **OpenAI-compatible endpoint** — `/v1/chat/completions` for GPTs/Coze-style tool schemas.
+- Automatic session keep-alive, configurable timeouts (`TIMEOUT_*` env vars), TypeScript
+  interfaces for responses, input validation on all public methods.
+- LGPL-3.0 licensed.
 
 ## How it works
 
 Suno gates generation behind a CAPTCHA, but which CAPTCHA is server-driven. Before each
-generation the server asks `/api/c/check`; the `captcha_version` in the response selects the
-provider, and the token goes into the generate payload as `token` + `token_provider`.
-Because hCaptcha token validation is sitekey-based, a standard 2Captcha solve is accepted —
-the whole flow takes ~60 seconds per generation, most of it the CAPTCHA solve.
+generation the server asks `/api/c/check`; the `captcha_version` in the response selects
+the provider (`1` = hCaptcha invisible, `2` = Turnstile), and the token goes into the
+generate payload as `token` + `token_provider`. Because hCaptcha token validation is
+sitekey-based, a standard 2Captcha solve is accepted — when a solve is required the flow
+takes ~60 seconds, most of it the CAPTCHA solve. When Suno's risk engine is satisfied with
+the session, no CAPTCHA is required at all and generation starts immediately.
+
+Generation posts to Suno's current `/api/generate/v2-web/` endpoint with the
+`token_provider`, `transaction_uuid` and `metadata` fields the backend expects. Session
+setup uses two-step Clerk authentication (homepage → `/create`) for reliability.
 
 If generation ever starts returning 422 again, Suno likely rotated the hCaptcha sitekey:
-re-extract it from the JS bundles on `suno.com/create` (grep the `/_next/static/chunks/` files
-for `sitekey`) and update `HCAPTCHA_SITEKEY` in `src/lib/SunoApi.ts`.
-
-## Features
-
-- Generate music from text prompts, with Custom Mode (lyrics, styles, title).
-- Lyrics generation, audio extension, stem separation, aligned lyrics, personas.
-- Automatic session keep-alive.
-- OpenAI-compatible `/v1/chat/completions` endpoint for agent integrations.
-- Adapts to GPTs/Coze-style tool schemas for use as an LLM plugin.
-- LGPL-3.0 licensed.
+re-extract it from the JS bundles on `suno.com/create` (grep the `/_next/static/chunks/`
+files for `sitekey`) and update `HCAPTCHA_SITEKEY` in `src/lib/SunoApi.ts`.
 
 ## Getting Started
 
@@ -154,10 +146,18 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
 
 ## API Reference
 
-```bash
+**Generation**
+
 - `/api/generate`: Generate music
 - `/v1/chat/completions`: Generate music — OpenAI-compatible format
 - `/api/custom_generate`: Generate music (Custom Mode: lyrics, style, title, etc.)
+- `/api/extend_audio`: Extend audio length
+- `/api/concat`: Generate the whole song from extensions (v2; body: `clip_id`, optional `is_infill`)
+- `/api/upsample_prompt`: Enhance prompts — `POST { original_prompt }` for song
+    descriptions or `POST { original_tags, user_guidance? }` for style tags
+
+**Lyrics**
+
 - `/api/generate_lyrics`: Generate lyrics based on prompt
 - `/api/cowrite_lyrics`: Edit lyrics by instruction — `POST { instruction, selected,
     context_before?, context_after?, lyricist_id?, lyrics_model? }`
@@ -165,34 +165,39 @@ rendering; poll `/api/get?ids=<id1>,<id2>` until the status is `streaming` or `c
     suffix?, title? }`; prefix/suffix preserved, returns stitched full_text
 - `/api/rhymes`: Rhyme suggestions — `POST { word, context_line?, style?, count?,
     include_slant? }` returns `{ perfect, slant }`
-- `/api/get`: Get music information by id (comma-separated; all music if omitted)
-- `/api/get_limit`: Get quota info
-- `/api/extend_audio`: Extend audio length
-- `/api/generate_stems`: Make stem tracks (separate vocals and music)
 - `/api/get_aligned_lyrics`: Word-level lyric timestamps
-- `/api/clip`: Get clip information by `?id=`
-- `/api/concat`: Generate the whole song from extensions (v2; body: `clip_id`, optional `is_infill`)
-- `/api/playlist`: Playlists — `GET` list (`?page=N`) or single (`?id=X&page=N`);
-  `POST {name}` create; `POST {action:'update'|'add'|'remove'|'trash', playlist_id, ...}`
-  for metadata, track add/remove (`clip_ids[]`), and trash (`undo:true` restores)
-- `/api/persona`: Personas — `GET ?id=X&page=N` for persona clips, `GET` (no id) to list
-    your personas, `POST { root_clip_id, name?, description?, is_public? }` to create one
-- `/api/get_wav`: Lossless audio — `GET ?id=<clip_id>` returns `{ wav_file_url }`,
-    converting on first request
-- `/api/upsample_prompt`: Enhance prompts — `POST { original_prompt }` for song
-    descriptions or `POST { original_tags, user_guidance? }` for style tags
-- `/api/set_visibility`: Publish/unpublish — `POST { id, is_public }`
-- `/api/trash`: Trash clips — `POST { ids: [...] }` (`trash: false` restores)
-- `/api/upload`: Upload local audio for extend/remix — `POST { file_path }` (path on the
-    server). Returns `upload_id`, `clip_id` and Suno's analysis (BPM, key, vocals).
-    Asserts Suno's upload terms — only upload audio you own rights to.
+
+**Editing**
+
 - `/api/crop`: Crop to a range or cut it out — `POST { id, start_s, end_s,
     remove_section?, title? }`; async worker, returns `action_clip_id`
 - `/api/fade`: Fade-in/out — `POST { id, fade_in_time?, fade_out_time?, title? }`
 - `/api/adjust_speed`: Tempo change — `POST { id, speed_multiplier, keep_pitch?, title? }`
 - `/api/reverse`: Reverse audio — `POST { id, title? }` (instrumental clips only —
     Suno rejects vocals with `not_allowed_on_vocal`)
-```
+
+**Library**
+
+- `/api/get`: Get music information by id (comma-separated; all music if omitted)
+- `/api/get_limit`: Get quota info
+- `/api/clip`: Get clip information by `?id=`
+- `/api/get_wav`: Lossless audio — `GET ?id=<clip_id>` returns `{ wav_file_url }`,
+    converting on first request
+- `/api/set_visibility`: Publish/unpublish — `POST { id, is_public }`
+- `/api/trash`: Trash clips — `POST { ids: [...] }` (`trash: false` restores)
+- `/api/upload`: Upload local audio for extend/remix — `POST { file_path }` (path on the
+    server). Returns `upload_id`, `clip_id` and Suno's analysis (BPM, key, vocals).
+    Asserts Suno's upload terms — only upload audio you own rights to.
+- `/api/generate_stems`: Make stem tracks (separate vocals and music) — legacy,
+    currently untested
+
+**Playlists & personas**
+
+- `/api/playlist`: Playlists — `GET` list (`?page=N`) or single (`?id=X&page=N`);
+  `POST {name}` create; `POST {action:'update'|'add'|'remove'|'trash', playlist_id, ...}`
+  for metadata, track add/remove (`clip_ids[]`), and trash (`undo:true` restores)
+- `/api/persona`: Personas — `GET ?id=X&page=N` for persona clips, `GET` (no id) to list
+    your personas, `POST { root_clip_id, name?, description?, is_public? }` to create one
 
 Only generation requires a CAPTCHA solve; all other endpoints work with just the account
 session.
@@ -200,113 +205,46 @@ session.
 You can also pass cookies in the `Cookie` header of a request to override `SUNO_COOKIE` —
 handy for using multiple accounts.
 
-## API Integration Code Examples
+## MCP Server
 
-### Python
+The API doubles as an [MCP](https://modelcontextprotocol.io) server (streamable HTTP) at
+`http://localhost:3000/api/mcp`, exposing 30 tools: generation, custom mode, extend,
+concat, lyrics (generate/cowrite/infill/rhymes/aligned), editing (crop/fade/speed/reverse),
+upload, WAV, personas, playlists, visibility and trash.
 
-```python
-import time
-import requests
+Register it with any MCP client, e.g. with [Hermes](https://github.com/NousResearch/hermes-agent):
 
-# replace with your suno-api URL
-base_url = 'http://localhost:3000'
-
-
-def generate_audio_by_prompt(payload):
-    url = f"{base_url}/api/generate"
-    response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-    return response.json()
-
-
-def get_audio_information(audio_ids):
-    url = f"{base_url}/api/get?ids={audio_ids}"
-    response = requests.get(url)
-    return response.json()
-
-
-def get_quota_information():
-    url = f"{base_url}/api/get_limit"
-    response = requests.get(url)
-    return response.json()
-
-
-if __name__ == '__main__':
-    data = generate_audio_by_prompt({
-        "prompt": "A popular heavy metal song about war, sung by a deep-voiced male singer, slowly and melodiously. The lyrics depict the sorrow of people after the war.",
-        "make_instrumental": False,
-        "wait_audio": False
-    })
-
-    ids = f"{data[0]['id']},{data[1]['id']}"
-    print(f"ids: {ids}")
-
-    for _ in range(60):
-        data = get_audio_information(ids)
-        if data[0]["status"] == 'streaming':
-            print(f"{data[0]['id']} ==> {data[0]['audio_url']}")
-            print(f"{data[1]['id']} ==> {data[1]['audio_url']}")
-            break
-        time.sleep(5)
+```bash
+hermes mcp add suno --url http://localhost:3000/api/mcp
+hermes config set mcp_servers.suno.timeout 420   # generations can take a while
 ```
 
-### JavaScript
+## Examples
 
-```js
-const axios = require("axios");
+Runnable integration examples live in [`examples/`](examples/):
 
-// replace with your suno-api URL
-const baseUrl = "http://localhost:3000";
-
-async function generateAudioByPrompt(payload) {
-  const url = `${baseUrl}/api/generate`;
-  const response = await axios.post(url, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-  return response.data;
-}
-
-async function getAudioInformation(audioIds) {
-  const url = `${baseUrl}/api/get?ids=${audioIds}`;
-  const response = await axios.get(url);
-  return response.data;
-}
-
-async function main() {
-  const data = await generateAudioByPrompt({
-    prompt:
-      "A popular heavy metal song about war, sung by a deep-voiced male singer, slowly and melodiously. The lyrics depict the sorrow of people after the war.",
-    make_instrumental: false,
-    wait_audio: false,
-  });
-
-  const ids = `${data[0].id},${data[1].id}`;
-  console.log(`ids: ${ids}`);
-
-  for (let i = 0; i < 60; i++) {
-    const data = await getAudioInformation(ids);
-    if (data[0].status === "streaming") {
-      console.log(`${data[0].id} ==> ${data[0].audio_url}`);
-      console.log(`${data[1].id} ==> ${data[1].audio_url}`);
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-  }
-}
-
-main();
-```
+- [`examples/generate_and_poll.py`](examples/generate_and_poll.py) — generate a song and
+  poll until the audio URL is ready (Python, `requests`)
+- [`examples/generate_and_poll.js`](examples/generate_and_poll.js) — same flow in
+  JavaScript (Node, `axios`)
 
 ## Contributing
 
-Bug reports and PRs are welcome on this fork — especially when Suno changes something and
-breaks generation again. Fixes are periodically submitted upstream, but this fork is where
-they land first.
+Bug reports and PRs are welcome — especially when Suno changes something and breaks
+generation again.
 
 ## License
 
-LGPL-3.0 or later, inherited from the original project. See [LICENSE](LICENSE).
+LGPL-3.0 or later. See [LICENSE](LICENSE).
 
 ## Statement
 
 suno-api is an unofficial open source project, intended for learning and research purposes
 only. Not affiliated with Suno, Inc.
+
+## Credits
+
+Based on [gcui-art/suno-api](https://github.com/gcui-art/suno-api) by gcui-art and its
+contributors, with improvements from the zach-fau fork and upstream PR #271
+(aqeel-spec). The August 2026 generation fix was also submitted upstream as
+[PR #286](https://github.com/gcui-art/suno-api/pull/286).
