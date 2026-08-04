@@ -13,19 +13,6 @@ Fork remotes:
 - `upstream` — gcui-art/suno-api (original project, PR target)
 - `fork` — glitchbunny0/suno-api (**push here**)
 
-## CRITICAL: git identity
-
-This machine's global git identity is the owner's work identity — do NOT use it here.
-This repo has repo-local config (`user.name=glitchbunny0`,
-`user.email=glitchbunny0@proton.me`). Verify before every commit:
-
-```bash
-git config user.name   # must print: glitchbunny0
-```
-
-`git commit --author=...` is NOT sufficient — the committer identity leaks too.
-If the config is missing, set it repo-locally (never `--global`).
-
 ## Architecture
 
 - `src/lib/SunoApi.ts` — the entire API client (session/auth, captcha, all endpoints).
