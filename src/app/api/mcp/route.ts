@@ -35,7 +35,7 @@ const handler = createMcpHandler(
         inputSchema: z.object({
           prompt: z.string().describe('Song description, e.g. "lo-fi hip hop loop, mellow keys"'),
           make_instrumental: z.boolean().optional().describe('No vocals (default false)'),
-          model: z.string().optional().describe('Model name, default chirp-crow (Suno v5)'),
+          model: z.string().optional().describe('Model slug, default chirp-hawk (Suno v6). Also: chirp-hawk-wild (v6-wild), chirp-goose (v6-mini, free)'),
           wait_audio: z.boolean().optional().describe('Wait for songs to finish rendering (default false)')
         })
       },

@@ -8,7 +8,7 @@
 ## Features
 
 - **Music generation** — text prompts and Custom Mode (lyrics, styles, title).
-  Suno v5.5 (`chirp-fenix`) by default; v5, v4.5+ and v4.5 selectable per request.
+  Suno v6 (`chirp-hawk`) by default; v6-wild (`chirp-hawk-wild`) and v6-mini (`chirp-goose`) selectable per request.
 - **CAPTCHA handled for you** — Suno's captcha is risk-based and version-driven
   (`/api/c/check` selects hCaptcha or Cloudflare Turnstile). The matching challenge is
   solved via [2Captcha](https://2captcha.com) — no browser needed in the common case.

@@ -47,7 +47,7 @@ Fork remotes:
   Solved via 2Captcha (`TWOCAPTCHA_KEY`), no browser needed. ~60s per solve.
 - Generate posts to `/api/generate/v2-web/` (NOT /v2/) and requires `token`,
   `token_provider`, `transaction_uuid`, and a `metadata` object. See generateSongs().
-- Default model is `chirp-fenix` (v5.5).
+- Default model is `chirp-hawk` (v6). v6-wild = `chirp-hawk-wild`, v6-mini = `chirp-goose`. All pre-v6 slugs retired by Suno on Sep 9 2026 (generation returns errors; library stays playable).
 - One persona per clip (`already_exists_for_clip`).
 - Trash state is NOT on the clip object — verify via feed membership.
 - Upload flow: POST /api/uploads/audio/ → S3 presigned POST → upload-finish → poll

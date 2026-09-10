@@ -42,7 +42,9 @@ Only /api/generate + /api/custom_generate require a CAPTCHA solve
 (CaptchaConsumer has exactly one value: 'generation').
 
 Verified Aug 3, 2026: real generation returned 2 submitted clips on
-chirp-fenix (v5.5) via 2Captcha-solved hCaptcha token.
+chirp-fenix (v5.5, since retired) via 2Captcha-solved hCaptcha token.
+Verified Sep 10, 2026: custom_generate on chirp-hawk (v6) → 2 clips complete
+in ~15s; get_wav returned signed S3 URL. v6 family slugs: hawk / hawk-wild / goose.
 
 ## How Generation Was Fixed (Aug 3, 2026)
 
@@ -91,7 +93,7 @@ Rebuilt on gcui-art/suno-api upstream/main as base. The zach-fau fork had no
 common git ancestor (fresh init, not a proper fork).
 
 ### Fork Improvements Preserved
-- DEFAULT_MODEL = 'chirp-fenix' (v5.5, not upstream's v3.5)
+- DEFAULT_MODEL = 'chirp-hawk' (v6, as of Sep 2026 model migration; not upstream's v3.5)
 - Two-step Clerk auth (homepage → /create)
 - Session-variant __client_uat timestamp extraction
 - __client cookie on both auth.suno.com + clerk.suno.com
